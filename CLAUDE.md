@@ -78,7 +78,7 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 ## Game rules (current design)
 
 - **Rounds** (`RoundGame` in `packages/core`): a round lasts 5 minutes, then a 60 s summary, then the next round opens. Viewers join a round by typing exactly `1` in chat (built into the main process, not a rule); joining during the summary reserves a spot in the next round, and everyone must join again each round. Every joined player casts for free every 30 s; gifts add casts, and a gifter who hasn't joined is joined automatically (no gift is wasted). Ranking — and the yacht podium and crown — is by the **total sell price of every fish** a player caught this round.
-- **Round summary**: podium plus a browser over every player's fish (most valuable first); ←/→ steps through players and flies the camera to them, and it auto-advances when nobody presses keys.
+- **Round summary**: podium plus a browser over every player's fish (most valuable first); ←/→ steps through players, and it auto-advances when nobody presses keys. The selected player's fish swim as 3D models in a big fish tank on the beach (`showcase.ts`, up to 10 fish, sized by the cube root of weight relative to their heaviest), with the player standing beside it; the camera flies there for the summary.
 - **Catches** (`rollCatch` in `fish.ts`): rarity from the published table (Rare+ boosted ×rareMultiplier during FISH FRENZY, ×1.5 with special bait), species by rarity, a heavy-tailed size, independent stacking mutations. Species ids live in core; Thai names live in the renderer's i18n file.
 - **Sell price** (`priceOf`): species price × size (weight relative to a typical fish of that species, so ×2 weight = ×2 price) × each mutation's `priceMultiplier` (gold ×3, diamond ×10, lava ×25, neutron star ×100, black hole ×1,000 — much gentler than the weight multipliers). Prices are in-game coins only; the full price table is published in settings next to the drop rates.
 
@@ -102,7 +102,7 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 - **Big fish are shown big, not just as numbers.** Length scales with the cube root of weight. A catch plays a 6–8 s reveal: close-up reel-in → fish rises → camera dollies back while scale references enter the frame (dock, houses, temple, mountains, clouds, planet).
 - **Do not build kilometre-scale geometry.** Switch between scale tiers (pond → village → province → space), each authored at an engine-friendly scale, and fake distance with fog and DOF. Use logarithmic depth only if depth artifacts appear.
 - Density mutations (black hole, neutron star) are the opposite joke: a 2 cm fish that breaks the dock.
-- Fish: one low-poly model per species, swim via vertex-shader sine bend; mutations are materials (emissive lava cracks, fresnel diamond, dark body + orbiting particle ring for black hole).
+- Fish (`fishModels.ts`): one low-poly model per species built from a few parameters (body proportions, two-tone gradient + pattern in vertex colours, tail/dorsal shape, whiskers, crest, horns); the tail is a separate pivot that wiggles. Mutations are materials: gold, translucent diamond, pulsing lava glow, glowing neutron star, black body + orbiting accretion ring for black hole (the rarest mutation decides the look). A vertex-shader swim bend can replace the tail wiggle later.
 - Portrait 9:16, target 1080×1920 at 60 fps. Provide quality presets (DOF off, lower shadows, render scale) because the streamer's PC is also encoding video.
 
 ## Hard constraints

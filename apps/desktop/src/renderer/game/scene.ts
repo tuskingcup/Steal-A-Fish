@@ -13,6 +13,7 @@ import "@babylonjs/core/PostProcesses/RenderPipeline/postProcessRenderPipelineMa
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import { createBoat } from "./boat";
 import { createRaft } from "./raft";
+import { createShowcase, type TankOwner } from "./showcase";
 import { createCrew, type Crew, type CrewMember } from "./crew";
 import { createBeach, createDock, createSea, createSky, DOCK_END, DOCK_TOP, HORIZON } from "./seaside";
 
@@ -26,6 +27,8 @@ export interface PondScene {
   focusOverview(): void;
   /** Fly the camera to one fisher (no-op if they aren't out fishing). */
   focusOn(userId: string): void;
+  /** Show someone's catch swimming in the fish tank and fly there; null hides it. */
+  showTank(owner: TankOwner | null): void;
   /** Who the camera is following, or null for the overview. */
   focusedId(): string | null;
 }
@@ -44,6 +47,8 @@ const CLOSE_RADIUS = 5.5;
 const CLOSE_BETA = 1.28;
 const CLOSE_SIDE = 0.6;
 const FLY_SEC = 0.9;
+/** Director target meaning "the fish tank" rather than a fisher. */
+const TANK = "\u0000tank";
 
 /**
  * HD-2D seaside: low-poly 3D world with pixel textures, pixel-art fishers (one per active viewer,
@@ -114,6 +119,8 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     ] as const
   ).map(([x, z, heading], i) => createRaft(scene, shadows, new Vector3(x, 0, z), heading, i));
   const crew = createCrew(scene, engine, shadows, boat, rafts, host);
+  // Fish tank on the beach behind the dock, shown during the round summary.
+  const showcase = createShowcase(scene, shadows, -1.5, -24);
 
   // HD-2D post stack: tilt-shift DOF, bloom, vignette, grain.
   const pipeline = new DefaultRenderingPipeline("hd2d", true, scene, [camera]);
@@ -143,6 +150,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   };
   const desiredPose = (): CameraPose | null => {
     if (focused === null) return OVERVIEW;
+    if (focused === TANK) return showcase.cameraPose();
     const who = crew.tour().find((t) => t.userId === focused);
     if (!who) return null;
     // ArcRotate puts the camera at (cos α, sin α) around the target; face the fisher from the front, a bit to the side.
@@ -156,6 +164,16 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     const next = i + step;
     focused = next < 0 || next >= ids.length ? null : ids[next]!;
     startFly();
+  };
+  const showTank = (owner: TankOwner | null): void => {
+    showcase.show(owner);
+    if (owner && focused !== TANK) {
+      focused = TANK;
+      startFly();
+    } else if (!owner && focused === TANK) {
+      focused = null;
+      startFly();
+    }
   };
   const focusOn = (userId: string): void => {
     if (focused === userId || !crew.tour().some((t) => t.userId === userId)) return;
@@ -176,6 +194,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     // Waves at half rate: the CPU-side facet update is the scene's biggest per-frame cost.
     if (frame++ % 2 === 0) sea.update(time);
     crew.update(camera, time, dt);
+    showcase.update(camera, time);
 
     let want = desiredPose();
     if (!want) {
@@ -201,7 +220,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
 
   engine.runRenderLoop(() => scene.render());
   window.addEventListener("resize", () => engine.resize());
-  return { engine, scene, camera, crew, focusStep, focusOverview, focusOn, focusedId: () => focused };
+  return { engine, scene, camera, crew, focusStep, focusOverview, focusOn, showTank, focusedId: () => (focused === TANK ? null : focused) };
 }
 
 function shortestAngle(from: number, to: number): number {

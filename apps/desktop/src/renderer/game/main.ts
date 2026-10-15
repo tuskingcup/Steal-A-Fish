@@ -134,14 +134,15 @@ window.saf.onPodium((podium) => {
   championId = champion?.userId ?? null;
 });
 
-// ---------- Round summary: podium plus a browser over everyone's fish ----------
+// ---------- Round summary: podium, everyone's fish in the tank, and a list browser ----------
 
 let summary: RoundSummary | null = null;
 let selected = 0;
 /** Auto-browse waits until this time (longer after a key press, so the streamer stays in control). */
 let holdUntil = 0;
 const MEDALS = ["🥇", "🥈", "🥉"];
-const FISH_ROWS = 7;
+/** The tank shows the fish in 3D, so the list stays short and leaves the middle of the screen free. */
+const FISH_ROWS = 4;
 const AUTO_BROWSE_MS = 6000;
 const MANUAL_HOLD_MS = 15000;
 const FIRST_HOLD_MS = 9000;
@@ -157,6 +158,7 @@ window.saf.onSummary((s) => {
 });
 
 function hideSummary(): void {
+  if (summary) pond.showTank(null);
   summary = null;
   document.body.classList.remove("in-summary");
   summaryEl.classList.remove("show");
@@ -187,7 +189,7 @@ function renderSummary(): void {
   let browser = `<div class="stats">${esc(th.noPlayers)}</div>`;
   const p = players[selected];
   if (p) {
-    pond.focusOn(p.userId);
+    pond.showTank({ userId: p.userId, fish: p.fish });
     const rows = p.fish
       .slice(0, FISH_ROWS)
       .map(
