@@ -7,7 +7,6 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateRibbon } from "@babylonjs/core/Meshes/Builders/ribbonBuilder";
 import { CreateTube } from "@babylonjs/core/Meshes/Builders/tubeBuilder";
-import { ExtrudeShapeCustom } from "@babylonjs/core/Meshes/Builders/shapeBuilder";
 import { lowPolyMat } from "./materials";
 import { waveHeight } from "./seaside";
 
@@ -51,34 +50,37 @@ export function createBoat(scene: Scene, shadows: ShadowGenerator, base: Vector3
     return mesh;
   };
 
-  // Hull: a deep V section swept stern-to-bow, pointed at the bow, glossy white.
-  const shape = [
-    new Vector3(-1, 1, 0),
-    new Vector3(-0.97, 0.45, 0),
-    new Vector3(-0.68, -0.15, 0),
-    new Vector3(0, -0.45, 0),
-    new Vector3(0.68, -0.15, 0),
-    new Vector3(0.97, 0.45, 0),
-    new Vector3(1, 1, 0),
-  ].map((p) => new Vector3(p.x * HALF_BEAM, p.y * DECK, 0));
+  // Hull: deep-V cross-sections from stern to bow. Each section narrows with the deck (never
+  // shrinks in height), so the sides always meet the deck edge; the keel sweeps up at the bow.
   const STEPS = 20;
   const path: Vector3[] = [];
   for (let i = 0; i <= STEPS; i++) {
     const z = -HALF_LEN + (i / STEPS) * HALF_LEN * 2;
     path.push(new Vector3(0, sheer(z), z));
   }
-  const hull = ExtrudeShapeCustom(
-    "yachtHull",
-    {
-      shape,
-      path,
-      scaleFunction: (i: number) => Math.max(0.04, beam(path[i]!.z) / HALF_BEAM),
-      rotationFunction: () => 0,
-      sideOrientation: Mesh.DOUBLESIDE,
-      cap: Mesh.CAP_START,
-    },
-    scene,
-  );
+  /** Section corners: x as a fraction of the half-beam, height as a fraction from keel (0) to deck (1). */
+  const PROFILE: readonly (readonly [number, number])[] = [
+    [-1, 1],
+    [-0.97, 0.62],
+    [-0.68, 0.21],
+    [0, 0],
+    [0.68, 0.21],
+    [0.97, 0.62],
+    [1, 1],
+  ];
+  const section = (p: Vector3) => {
+    const deckY = DECK + p.y;
+    const keelY = -0.42 * (1 - 0.85 * Math.max(0, p.z / HALF_LEN) ** 1.5);
+    return PROFILE.map(([fx, fy]) => new Vector3(fx * beam(p.z), keelY + fy * (deckY - keelY), p.z));
+  };
+  const sections = path.map(section);
+  /** A flat end panel: the section joined to its own centre line. */
+  const cap = (pts: Vector3[]) => [pts, pts.map((q) => new Vector3(0, q.y, q.z))];
+  const hullSides = CreateRibbon("yachtHull", { pathArray: sections, sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const transom = CreateRibbon("yachtTransom", { pathArray: cap(sections[0]!), sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const stem = CreateRibbon("yachtStem", { pathArray: cap(sections[STEPS]!), sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const hull = Mesh.MergeMeshes([hullSides, transom, stem], true)!;
+  hull.name = "yachtHull";
   hull.convertToFlatShadedMesh();
   part(hull, "#F4F6F8", { specular: 0.6 });
   hull.receiveShadows = true;
