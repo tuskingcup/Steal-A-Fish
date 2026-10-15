@@ -22,7 +22,7 @@ interface OverlayRow {
   value: number;
 }
 
-/** Rows shown before the list scrolls. */
+/** Only the top 10 are shown; there is no scrolling. */
 const VISIBLE_ROWS = 10;
 /** The page is a fixed 131 px wide (the streamer's layout slot); rows are sized for that. */
 const WIDTH_PX = 131;
@@ -31,10 +31,10 @@ const PORTS = [37821, 37822, 37823, 37824, 37825];
 /** The page answers on all of these (older links keep working). */
 const PAGE_PATHS = new Set(["/", "/index.html", "/leaderboard", "/leaderboard/", "/leaderboard/index.html", "/leaderboard.html"]);
 
-/** Just the standings: no round number, clock or join hint (the game window shows those). */
+/** Just the top 10: no round number, clock or join hint (the game window shows those). */
 function data(snap: OverlaySnapshot): { rows: OverlayRow[] } {
   return {
-    rows: snap.standings.map((s) => ({ rank: s.rank, id: s.userId, name: s.name, points: formatPointsShort(s.points), value: s.points })),
+    rows: snap.standings.slice(0, VISIBLE_ROWS).map((s) => ({ rank: s.rank, id: s.userId, name: s.name, points: formatPointsShort(s.points), value: s.points })),
   };
 }
 
@@ -50,9 +50,7 @@ const PAGE = `<!doctype html>
     font-family: "Mitr", "Noto Sans Thai", "Leelawadee UI", "Tahoma", system-ui, sans-serif; }
   .panel { width: var(--w); box-sizing: border-box; background: #071C29E6; border: 1px solid #2D6E84; border-radius: 10px; padding: 3px; }
   .panel.empty { display: none; }
-  /* Scrollable by wheel/drag, but no scrollbar eating the narrow width. */
-  .list { max-height: calc(var(--row) * var(--rows)); overflow-y: auto; scrollbar-width: none; }
-  .list::-webkit-scrollbar { display: none; }
+  .list { max-height: calc(var(--row) * var(--rows)); overflow: hidden; }
   .row { height: var(--row); box-sizing: border-box; display: flex; align-items: center; gap: 5px; padding: 0 4px; border-radius: 7px; transition: background .6s; }
   .row + .row { box-shadow: inset 0 1px 0 #2D6E8444; }
   .rank { position: relative; flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
@@ -73,8 +71,6 @@ const PAGE = `<!doctype html>
 <body>
 <div class="panel empty" id="panel"><div class="list" id="list"></div></div>
 <script>
-const params = new URLSearchParams(location.search);
-const AUTO = params.get("auto") !== "0";
 const panel = document.getElementById("panel");
 const list = document.getElementById("list");
 const prev = new Map();
@@ -117,21 +113,6 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 1000);
-
-// Viewers can't scroll a stream, so when nobody has touched the list for a while it scrolls
-// itself slowly to the bottom and back. Any wheel, drag or touch hands control back for 15 s.
-let idleUntil = 0;
-for (const ev of ["wheel", "mousedown", "touchstart", "keydown"]) addEventListener(ev, () => (idleUntil = Date.now() + 15000), { passive: true });
-let phase = "top", phaseAt = Date.now();
-setInterval(() => {
-  if (!AUTO || Date.now() < idleUntil || list.scrollHeight <= list.clientHeight + 2) { phase = "top"; phaseAt = Date.now(); return; }
-  const since = Date.now() - phaseAt;
-  if (phase === "top" && since > 6000) { phase = "down"; phaseAt = Date.now(); }
-  else if (phase === "down") {
-    list.scrollTop += 1;
-    if (list.scrollTop + list.clientHeight >= list.scrollHeight - 1) { phase = "bottom"; phaseAt = Date.now(); }
-  } else if (phase === "bottom" && since > 4000) { list.scrollTo({ top: 0, behavior: "smooth" }); phase = "top"; phaseAt = Date.now(); }
-}, 30);
 </script>
 </body>
 </html>`;

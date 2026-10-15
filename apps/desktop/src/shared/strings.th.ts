@@ -97,7 +97,7 @@ export const th = {
 
   // Leaderboard overlay for TikTok LIVE Studio (served by the app, settings shows the link).
   overlayHeading: "Overlay อันดับแต้มสำหรับ TikTok LIVE Studio",
-  overlayHint: "ใน TikTok LIVE Studio: เพิ่มแหล่งที่มา → ลิงก์ (Link) → วางลิงก์นี้ · ขนาด กว้าง 131 × สูง 368 · แสดง 10 อันดับแรก ที่เหลือเลื่อนลงดูได้ (ถ้าไม่มีใครเลื่อน จะเลื่อนให้ดูเองช้า ๆ)",
+  overlayHint: "ใน TikTok LIVE Studio: เพิ่มแหล่งที่มา → ลิงก์ (Link) → วางลิงก์นี้ · ขนาด กว้าง 131 × สูง 368 · แสดง 10 อันดับแรก",
   overlayStarting: "กำลังเปิด overlay…",
   overlayFailed: "เปิด overlay ไม่ได้",
   copyLink: "คัดลอกลิงก์",
