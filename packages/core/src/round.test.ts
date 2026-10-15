@@ -135,7 +135,7 @@ describe("RoundGame", () => {
       "gift-finger-heart": [250, 3_000],
       "gift-rosa": [500, 6_000],
       "gift-doughnut": [2_000, 25_000],
-      "gift-hand-hearts": [7_000, Infinity],
+      "gift-hand-hearts": [10_000, Infinity],
     };
     for (const id of tiers) {
       const action = defaultRulesConfig.rules.find((r) => r.id === id)!.action;

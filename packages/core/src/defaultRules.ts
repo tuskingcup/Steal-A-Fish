@@ -1,23 +1,25 @@
 import type { CastAction, RulesConfig } from "./rules";
 
 /** Bump when the default rules change; rules.json files from older versions are replaced. */
-export const RULES_VERSION = 4;
+export const RULES_VERSION = 5;
 
 /** Rules reset to the new defaults when a rules.json is upgraded past a version (re-balances). */
 export const RULES_REFRESH: Record<number, string[]> = {
   4: ["gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts", "gift-orange-heart-lucky", "follow-rosa"],
+  5: ["gift-hand-hearts", "gift-orange-heart-lucky"],
 };
 
 /**
  * Gift tiers: one cast per gift, its points kept within the tier's range and its rarity within a
  * matching band, so the fish fits its points (a rose never lands a 600-point naga):
- * Rose 50–600, Finger Heart 250–3,000, Rosa 500–6,000, Doughnut 2,000–25,000, Hand Hearts 7,000+.
+ * Rose 50–600, Finger Heart 250–3,000, Rosa 500–6,000, Doughnut 2,000–25,000, Hand Hearts 10,000+
+ * (always a big catch, so it always gets the full catch scene).
  */
 const ROSE: CastAction = { type: "cast", count: 1, minRarity: "uncommon", maxRarity: "rare", minPoints: 50, maxPoints: 600 };
 const FINGER_HEART: CastAction = { type: "cast", count: 1, minRarity: "rare", maxRarity: "epic", minPoints: 250, maxPoints: 3_000 };
 const ROSA: CastAction = { type: "cast", count: 1, minRarity: "epic", maxRarity: "legendary", minPoints: 500, maxPoints: 6_000 };
 const DOUGHNUT: CastAction = { type: "cast", count: 1, minRarity: "epic", maxRarity: "legendary", minPoints: 2_000, maxPoints: 25_000 };
-const HAND_HEARTS: CastAction = { type: "cast", count: 1, minRarity: "legendary", minPoints: 7_000 };
+const HAND_HEARTS: CastAction = { type: "cast", count: 1, minRarity: "legendary", minPoints: 10_000 };
 
 /**
  * Rules written to userData/rules.json on first launch. Gifts are matched by coin value
