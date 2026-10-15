@@ -2,8 +2,6 @@ import type { Action, LiveEvent, MutationId, Rarity, RoundPhase, SizeClass } fro
 
 /** All player-facing Thai text lives here. */
 export const th = {
-  gameTitle: "STEAL A FISH",
-  pondVillage: "บ่อหมู่บ้าน",
   waiting: "รอของขวัญจากคนดู…",
   hostName: "เจ้าของท่าเรือ",
   newChampion: "ขึ้นอันดับ 1 แล้ว!",
@@ -25,10 +23,10 @@ export const th = {
   heaviest: "หนักสุด",
   total: "รวม",
   totalValue: "มูลค่ารวม",
-  coinsUnit: "เหรียญ",
+  coinsUnit: "แต้ม",
   mutationEffect: (weight: string, price: string) => `น้ำหนัก ×${weight}, ราคา ×${price}`,
   sellPrice: "ขายได้",
-  priceTable: "ปลาแต่ละชนิด: น้ำหนัก · ราคาขาย (เหรียญในเกม) · โอกาสต่อการเหวี่ยง",
+  priceTable: "ปลาแต่ละชนิด: น้ำหนัก · แต้มที่ได้ · โอกาสต่อการเหวี่ยง",
   priceNote: "ราคาขาย = ราคาพันธุ์ปลา × ขนาดตัว (ใหญ่กว่าปกติ 2 เท่า ได้ 2 เท่า) × ตัวคูณการกลายพันธุ์ · อันดับคิดจากมูลค่ารวมของปลาทุกตัวในรอบ",
   noFish: "ยังไม่ได้ปลาเลย",
   browseHint: "← / → ดูปลาทีละตัว · ↑ / ↓ เปลี่ยนผู้เล่น",
@@ -82,7 +80,20 @@ export const th = {
   sizeNormal: "ปกติ",
   sizeEffect: (weight: string, price: string) => `น้ำหนัก ×${weight}, ราคา ×${price}`,
   pityNote: "การันตีปลาระดับหายากขึ้นไป ภายใน 30 ครั้ง · FISH FRENZY เพิ่มโอกาสปลาหายาก",
-  noRealValue: "เหรียญและปลาไม่มีมูลค่าจริง แลกเป็นเงินหรือของใด ๆ ไม่ได้ และโอนให้กันไม่ได้",
+  noRealValue: "แต้มและปลาไม่มีมูลค่าจริง แลกเป็นเงินหรือของใด ๆ ไม่ได้ และโอนให้กันไม่ได้",
+
+  // Leaderboard overlay for TikTok LIVE Studio (served by the app, settings shows the link).
+  overlayTitle: (round: number) => `🏆 อันดับแต้ม · รอบที่ ${round}`,
+  overlayEmpty: "พิมพ์ 1 ในแชทเพื่อร่วมเล่น",
+  overlayFinal: "สรุปผล",
+  overlayMore: (n: number) => `อีก ${n} คน · เลื่อนลงเพื่อดู`,
+  overlayHeading: "Overlay อันดับแต้มสำหรับ TikTok LIVE Studio",
+  overlayHint: "ใน TikTok LIVE Studio: เพิ่มแหล่งที่มา → ลิงก์ (Link) → วางลิงก์นี้ · ขนาดแนะนำ 420 × 640 · แสดง 10 อันดับแรก ที่เหลือเลื่อนลงดูได้ (ถ้าไม่มีใครเลื่อน จะเลื่อนให้ดูเองช้า ๆ)",
+  overlayStarting: "กำลังเปิด overlay…",
+  overlayFailed: "เปิด overlay ไม่ได้",
+  copyLink: "คัดลอกลิงก์",
+  copied: "คัดลอกแล้ว!",
+  openInBrowser: "เปิดดู",
   cameraKeys: "หน้าต่างเกม: ← / → ดูคนตกปลาทีละคน · Esc กลับภาพรวม · ลากเมาส์หมุนกล้อง · ล้อเมาส์ซูม",
   rules: "กฎของขวัญ → เหตุการณ์ (rules.json)",
   rulesHint: "แก้ JSON แล้วกดบันทึก ระบบตรวจรูปแบบก่อนใช้งาน และโหลดใหม่อัตโนมัติถ้าแก้ไฟล์ตรง",
@@ -210,9 +221,14 @@ export function formatWeight(log10: number): string {
   return formatBig(log10, "กก.");
 }
 
-/** In-game coins, e.g. "1,250 เหรียญ", "3.4 ล้าน เหรียญ". */
-export function formatCoins(coins: number): string {
-  return `🪙 ${coins <= 0 ? "0 เหรียญ" : formatBig(Math.log10(coins), "เหรียญ")}`;
+/** In-game points (a fish's sell price), e.g. "⭐ 1,250 แต้ม", "⭐ 3.4 ล้าน แต้ม". */
+export function formatPoints(points: number): string {
+  return `⭐ ${points <= 0 ? "0 แต้ม" : formatBig(Math.log10(points), "แต้ม")}`;
+}
+
+/** Points without the unit, for small labels: "1,250", "3.4 ล้าน". */
+export function formatPointsShort(points: number): string {
+  return points <= 0 ? "0" : formatBig(Math.log10(points), "").trim();
 }
 
 /** Fish length in Thai units: "2 ซม.", "34 เมตร", "3.4 กิโลเมตร", "12,000 กิโลเมตร". */

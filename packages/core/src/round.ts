@@ -67,6 +67,16 @@ export interface PlayerSummary {
   fish: CaughtFish[];
 }
 
+/** One row of the live leaderboard (the TikTok overlay). */
+export interface Standing {
+  rank: number;
+  userId: string;
+  name: string;
+  /** Total sell price of every fish this round, in points. */
+  points: number;
+  fish: number;
+}
+
 export interface RoundSummary {
   round: number;
   players: PlayerSummary[];
@@ -198,10 +208,24 @@ export class RoundGame {
     return this.board.top(3).map((id) => ({ userId: id, name: this.players.get(id)?.name ?? id }));
   }
 
+  /** Everyone in the round, best first by total value; players who caught nothing come last. */
+  private ranked(): string[] {
+    const order = this.board.top(this.players.size);
+    const placed = new Set(order);
+    return [...order, ...[...this.players.keys()].filter((id) => !placed.has(id))];
+  }
+
+  /** The live leaderboard: everyone in the round (or the finished one, during the summary). */
+  standings(): Standing[] {
+    return this.ranked().map((id, i) => {
+      const p = this.players.get(id)!;
+      return { rank: i + 1, userId: id, name: p.name, points: p.value, fish: p.fish.length };
+    });
+  }
+
   /** Everyone in the round, ranked by total value; players who caught nothing come last. */
   summary(): RoundSummary {
-    const order = this.board.top(this.players.size);
-    const ranked = [...order, ...[...this.players.keys()].filter((id) => !order.includes(id))];
+    const ranked = this.ranked();
     return {
       round: this.round,
       players: ranked.map((id, i) => {

@@ -39,3 +39,4 @@ button:disabled { opacity: .5; cursor: default; }
 .rates td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .r-common { color: #C9D1D9; } .r-uncommon { color: #6FD08C; } .r-rare { color: #4FA3FF; }
 .r-epic { color: #B47CFF; } .r-legendary { color: #FFB52E; } .r-mythic { color: #FF5C8A; }
+.link { width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; margin-bottom: 6px; }

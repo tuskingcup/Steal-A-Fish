@@ -66,4 +66,24 @@ describe("RoundGame", () => {
     expect(sumLog10([6, 6])).toBeCloseTo(6 + Math.log10(2));
     expect(sumLog10([400, 1])).toBeCloseTo(400);
   });
+
+  it("ranks everyone for the live leaderboard, and keeps the finished round during the summary", () => {
+    const g = newGame();
+    g.start(0);
+    g.join("a", "A", 0);
+    g.join("b", "B", 0);
+    g.join("c", "C", 0);
+    g.cast("a", 3, 10);
+    g.cast("b", 6, 10);
+    const rows = g.standings();
+    expect(rows.map((r) => r.rank)).toEqual([1, 2, 3]);
+    expect(rows[2]!.userId).toBe("c"); // caught nothing: last
+    expect(rows[2]!.points).toBe(0);
+    expect(rows[0]!.points).toBeGreaterThanOrEqual(rows[1]!.points);
+    expect(rows.find((r) => r.userId === "b")!.fish).toBe(6);
+    g.end(100);
+    expect(g.standings()).toEqual(rows);
+    g.start(200);
+    expect(g.standings()).toEqual([]);
+  });
 });

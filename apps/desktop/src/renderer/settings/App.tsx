@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, speciesPercents, type RoundState } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
-import { describeAction, describeEvent, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../shared/strings.th";
+import { describeAction, describeEvent, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../../shared/strings.th";
 
 /** Public drop table (shown to everyone: no hidden odds). */
 const PERCENTS = rarityPercents();
@@ -29,9 +29,12 @@ export function App() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [round, setRound] = useState<RoundState | null>(null);
   const [, setNow] = useState(Date.now());
+  const [overlayUrl, setOverlayUrl] = useState<string | null | undefined>(undefined);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     void window.saf.getRules().then((r) => setRulesText(JSON.stringify(r, null, 2)));
+    void window.saf.overlayUrl().then(setOverlayUrl);
     const offState = window.saf.onLiveState(setState);
     const offLog = window.saf.onLog((entry) => setLog((prev) => [entry, ...prev].slice(0, MAX_LOG)));
     const offRound = window.saf.onRound(setRound);
@@ -102,6 +105,34 @@ export function App() {
           <button onClick={() => void window.saf.endRound()}>{th.endRound}</button>
         </div>
         <p className="hint">{th.roundRules}</p>
+      </section>
+
+      <section>
+        <h2>{th.overlayHeading}</h2>
+        {overlayUrl === undefined ? (
+          <p className="hint">{th.overlayStarting}</p>
+        ) : overlayUrl === null ? (
+          <p className="error">{th.overlayFailed}</p>
+        ) : (
+          <>
+            <input className="link" readOnly value={overlayUrl} onFocus={(e) => e.target.select()} aria-label={th.overlayHeading} />
+            <div className="row">
+              <button
+                className="primary"
+                onClick={() =>
+                  void window.saf.copyText(overlayUrl).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1800);
+                  })
+                }
+              >
+                {copied ? th.copied : th.copyLink}
+              </button>
+              <button onClick={() => window.open(overlayUrl)}>{th.openInBrowser}</button>
+            </div>
+          </>
+        )}
+        <p className="hint">{th.overlayHint}</p>
       </section>
 
       <section>

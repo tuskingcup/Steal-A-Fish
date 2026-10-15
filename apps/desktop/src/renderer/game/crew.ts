@@ -94,7 +94,10 @@ const LINE_POINTS = 14;
 /** Per-frame time for baking sprite frames; the rest waits for later frames. */
 const BAKE_BUDGET_MS = 4;
 /** Name tags further than this from the camera are hidden to keep the overview readable. */
-const TAG_MAX_DIST = 30;
+/** Name tags (with the player's points) show this far from the camera: the whole bay from the overview. */
+const TAG_MAX_DIST = 70;
+/** Tags closer than this are full size; further ones shrink (`nearness` < 1). */
+const TAG_FULL_DIST = 16;
 
 /** Classic look for the streamer's own fisher, who keeps the first dock seat. */
 export const HOST_AVATAR: Avatar = {
@@ -130,6 +133,8 @@ export interface NameTag {
   /** CSS pixels relative to the canvas. */
   x: number;
   y: number;
+  /** 1 when close to the camera, falling towards 0 further away (tags shrink with it). */
+  nearness: number;
   visible: boolean;
 }
 
@@ -472,6 +477,7 @@ export function createCrew(
           isFocused,
           x: p.x * cssScale,
           y: p.y * cssScale,
+          nearness: TAG_FULL_DIST / Math.max(TAG_FULL_DIST, toTag.length()),
           visible: near && Vector3.Dot(toTag, camForward) > 0 && f.appear > 0.6 && p.z > 0 && p.z < 1,
         };
       });

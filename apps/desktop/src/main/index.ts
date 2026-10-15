@@ -1,9 +1,10 @@
 import { join } from "node:path";
-import { BrowserWindow, app, ipcMain, shell } from "electron";
+import { BrowserWindow, app, clipboard, ipcMain, shell } from "electron";
 import { mathRandomRng, RoundGame, RuleEngine, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
 import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
+import { startOverlay } from "./overlay";
 
 let gameWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -207,6 +208,11 @@ app.whenReady().then(async () => {
       simulator.sendGift({ giftId: 5655, giftName: "Rose", diamonds: 1, viewer });
     }
   });
+  // Leaderboard overlay for TikTok LIVE Studio: a local web page with the live standings.
+  const overlay = startOverlay(() => ({ state: game.state(), standings: game.standings() }));
+  ipcMain.handle(IPC.overlayUrl, async () => (await overlay).url);
+  ipcMain.handle(IPC.copyText, (_e, text: string) => clipboard.writeText(String(text)));
+
   ipcMain.handle(IPC.roundStart, () => startRound());
   ipcMain.handle(IPC.roundEnd, () => endRound());
 
@@ -231,6 +237,7 @@ app.whenReady().then(async () => {
 
   app.on("before-quit", () => {
     clearInterval(ticker);
+    void overlay.then((o) => o.close());
     rules.close();
     void live.disconnect();
   });

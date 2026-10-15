@@ -2,7 +2,7 @@ import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type R
 import { fishLengthMeters } from "./reveal";
 import { finishFor, isDense } from "./fishModels";
 import { createPondScene } from "./scene";
-import { describeAction, fishName, formatClock, formatCoins, formatLength, formatWeight, rarityTh, th } from "../shared/strings.th";
+import { describeAction, fishName, formatClock, formatPoints, formatPointsShort, formatLength, formatWeight, rarityTh, th } from "../../shared/strings.th";
 
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
 const feed = document.getElementById("feed") as HTMLDivElement;
@@ -14,8 +14,6 @@ const summaryEl = document.getElementById("summary") as HTMLDivElement;
 const revealEl = document.getElementById("reveal") as HTMLDivElement;
 const revealLabels = document.getElementById("revealLabels") as HTMLDivElement;
 const flashEl = document.getElementById("flash") as HTMLDivElement;
-(document.getElementById("title") as HTMLDivElement).textContent = th.gameTitle;
-(document.getElementById("pond") as HTMLDivElement).textContent = th.pondVillage;
 
 const pond = createPondScene(canvas, { userId: "host", name: th.hostName });
 const { scene, camera, crew } = pond;
@@ -59,6 +57,7 @@ window.saf.onRound((state) => {
   if (newRound) {
     // Everyone types 1 again each round: clear the dock and the summary.
     crew.reset();
+    totals.clear();
     hideSummary();
     pond.focusOverview();
     push(`<b>${esc(th.round(state.round))}</b> — ${esc(th.joinHint)}`);
@@ -72,12 +71,13 @@ window.saf.onJoined((e) => {
     return;
   }
   crew.join({ userId: e.userId, name: e.name });
+  if (!totals.has(e.userId)) totals.set(e.userId, 0);
   push(`<b>@${esc(e.name)}</b> ${esc(th.joined)}`);
 });
 
 // ---------- Catches: feed lines and a display queue of catch cards ----------
 
-/** Rare+ catches get a card. Epic+ jump the queue; the queue is capped so it never lags far behind. */
+/** Big catches get a card. Epic+ jump the queue; the queue is capped so it never lags far behind. */
 const cardQueue: CatchEvent[] = [];
 let cardBusy = false;
 const CARD_MS = 2600;
@@ -109,26 +109,36 @@ function showNextCard(): void {
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</div>` +
     `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
-    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>` +
+    `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
     (e.personalBest ? `<div class="best">${esc(th.newBest)}</div>` : "");
   void card.offsetWidth; // restart the pop animation
   card.className = `r-${e.fish.rarity} show`;
   setTimeout(showNextCard, CARD_MS);
 }
 
+/**
+ * With a big crowd catching every few seconds, only big catches make the feed and the card: Epic
+ * and up, giant size classes and up, and diamond-or-rarer mutations. Every catch still pops its
+ * points over the catcher's head.
+ */
+function isBigCatch(e: CatchEvent): boolean {
+  const bigClass = e.fish.sizeClass !== "normal" && e.fish.sizeClass !== "big";
+  const bigMutation = e.fish.mutations.some((m) => m !== "gold");
+  return rarityRank(e.fish.rarity) >= rarityRank("epic") || bigClass || bigMutation;
+}
+
 window.saf.onCatch((e) => {
   crew.join({ userId: e.userId, name: e.name });
   crew.cast(e.userId);
-  // Commons only show up as a cast; anything better (or mutated) makes the feed.
-  const notable = e.fish.mutations.length > 0 || e.fish.sizeClass !== "normal";
-  if (rarityRank(e.fish.rarity) >= rarityRank("uncommon") || notable) {
-    push(
-      `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</span> ` +
-        `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatCoins(e.fish.price))}</span>`,
-    );
-  }
+  totals.set(e.userId, e.totalValue);
+  popPoints(e);
+  if (!isBigCatch(e)) return;
+  push(
+    `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</span> ` +
+      `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatPoints(e.fish.price))}</span>`,
+  );
   if (wantsReveal(e) && queueReveal(e)) return;
-  if (rarityRank(e.fish.rarity) >= rarityRank("rare") || (notable && e.fish.sizeClass !== "big")) queueCard(e);
+  queueCard(e);
 });
 
 // ---------- Big-catch reveal queue ----------
@@ -211,7 +221,7 @@ function renderReveal(): void {
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
     `<div class="len">${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
-    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>` +
+    `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
     (dense && th.denseFact[finish] ? `<div class="fact">${esc(th.denseFact[finish]!)}</div>` : "");
 }
 setInterval(renderReveal, 100);
@@ -298,7 +308,7 @@ function renderSummary(): void {
     .map(
       (p, i) =>
         `<div><span class="medal">${MEDALS[i]}</span><span class="pname">${esc(p.name)}</span>` +
-        `<span class="coin">${esc(formatCoins(p.totalValue))}</span></div>`,
+        `<span class="coin">${esc(formatPoints(p.totalValue))}</span></div>`,
     )
     .join("");
 
@@ -316,14 +326,14 @@ function renderSummary(): void {
         `<div class="exname">${esc(fishName(f.speciesId, f.mutations, f.sizeClass))} <span class="chip">${esc(rarityTh[f.rarity])}</span></div>` +
         `<div class="exnums"><span>${esc(formatWeight(f.weightLog10))}</span>` +
         `<span>${esc(th.lengthAbout(formatLength(fishLengthMeters(f.weightLog10, f.mutations))))}</span></div>` +
-        `<div class="exprice">${esc(th.sellPrice)} <span class="coin">${esc(formatCoins(f.price))}</span>` +
+        `<div class="exprice">${esc(th.sellPrice)} <span class="coin">${esc(formatPoints(f.price))}</span>` +
         `<small>${esc(th.fishOf(fishIdx + 1, p.fish.length))}</small></div>` +
         `</div>`
       : `<div class="stats">${esc(th.noFish)}</div>`;
     browser =
       `<div class="bhead"><span class="arrow">▲</span><span class="bname">${p.rank <= 3 ? MEDALS[p.rank - 1] + " " : ""}${esc(p.name)}</span><span class="arrow">▼</span></div>` +
       `<div class="stats">${esc(th.rank(p.rank, players.length))} · ${esc(th.fishCount(p.fish.length))}` +
-      (p.fish.length > 0 ? ` · ${esc(th.totalValue)} <span class="coin">${esc(formatCoins(p.totalValue))}</span>` : "") +
+      (p.fish.length > 0 ? ` · ${esc(th.totalValue)} <span class="coin">${esc(formatPoints(p.totalValue))}</span>` : "") +
       `</div>` +
       detail +
       `<div class="hint">${esc(th.browseHint)}</div>`;
@@ -371,6 +381,59 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
+// ---------- Points over heads ----------
+
+/** Each player's points this round (shown on their name tag). */
+const totals = new Map<string, number>();
+/** Where each visible name tag is this frame (CSS px, its scale, whether it shows points). */
+const tagAt = new Map<string, { x: number; y: number; scale: number; hasPoints: boolean }>();
+
+interface Pop {
+  el: HTMLDivElement;
+  userId: string;
+  born: number;
+}
+const pops: Pop[] = [];
+const POP_MS = 1700;
+const MAX_POPS = 80;
+
+/** "+1,250" rising from the catcher's head; bigger and in rarity colour for better fish. */
+function popPoints(e: CatchEvent): void {
+  const el = document.createElement("div");
+  el.className = `pop r-${e.fish.rarity}${isBigCatch(e) ? " big" : ""}`;
+  el.textContent = `+${formatPointsShort(e.fish.price)}`;
+  el.style.display = "none";
+  tagLayer.appendChild(el);
+  pops.push({ el, userId: e.userId, born: performance.now() });
+  while (pops.length > MAX_POPS) pops.shift()!.el.remove();
+}
+
+function renderPops(): void {
+  const now = performance.now();
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i]!;
+    const age = (now - p.born) / POP_MS;
+    if (age >= 1) {
+      p.el.remove();
+      pops.splice(i, 1);
+      continue;
+    }
+    const at = tagAt.get(p.userId);
+    if (!at) {
+      p.el.style.display = "none";
+      continue;
+    }
+    // Pops that land together stack instead of overlapping.
+    const stack = pops.filter((q, j) => j > i && q.userId === p.userId).length;
+    const rise = (at.hasPoints ? 40 : 26) * at.scale + age * 46 + stack * 20;
+    p.el.style.display = "";
+    p.el.style.opacity = String(age < 0.65 ? 1 : 1 - (age - 0.65) / 0.35);
+    // Pops stay readable even over far-away (shrunken) tags.
+    const size = Math.max(0.9, at.scale) * (age < 0.12 ? 0.6 + (age / 0.12) * 0.4 : 1);
+    p.el.style.transform = `translate(${at.x.toFixed(1)}px, ${(at.y - rise).toFixed(1)}px) translate(-50%, -100%) scale(${size.toFixed(2)})`;
+  }
+}
+
 // ---------- Name tags ----------
 
 // Name tags are HTML over the canvas: crisper Thai text than drawing it in the 3D scene.
@@ -394,20 +457,34 @@ scene.onAfterRenderObservable.add(() => {
   });
 
   const seen = new Set<string>();
+  tagAt.clear();
   for (const t of crew.nameTags(camera, pond.focusedId())) {
     seen.add(t.userId);
     let el = tags.get(t.userId);
     if (!el) {
       el = document.createElement("div");
+      el.innerHTML = `<span class="pts"></span><span class="nm"></span>`;
       tagLayer.appendChild(el);
       tags.set(t.userId, el);
     }
     const cls = (t.isChampion ? "tag champion" : t.isHost ? "tag host" : "tag") + (t.isFocused ? " focus" : "");
     if (el.className !== cls) el.className = cls;
-    if (el.textContent !== t.name) el.textContent = t.name;
+    const nm = el.lastElementChild as HTMLSpanElement;
+    if (nm.textContent !== t.name) nm.textContent = t.name;
+    // Round total, always on show for everyone in the round.
+    const total = totals.get(t.userId);
+    const pts = el.firstElementChild as HTMLSpanElement;
+    const ptsText = total === undefined ? "" : `⭐ ${formatPointsShort(total)}`;
+    if (pts.textContent !== ptsText) pts.textContent = ptsText;
+    pts.style.display = ptsText ? "" : "none";
     el.style.display = t.visible ? "" : "none";
-    el.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px) translate(-50%, -100%)`;
+    // Far-away tags shrink, so a full bay of 100 players stays readable.
+    const scale = t.isFocused ? 1 : Math.max(0.7, Math.min(1, t.nearness));
+    el.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px) translate(-50%, -100%) scale(${scale.toFixed(2)})`;
+    el.style.transformOrigin = "50% 100%";
+    if (t.visible) tagAt.set(t.userId, { x: t.x, y: t.y, scale, hasPoints: !!ptsText });
   }
+  renderPops();
   for (const [id, el] of tags) {
     if (!seen.has(id)) {
       el.remove();

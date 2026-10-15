@@ -27,6 +27,8 @@ const api: SafApi = {
   startRound: () => ipcRenderer.invoke(IPC.roundStart),
   endRound: () => ipcRenderer.invoke(IPC.roundEnd),
   onLog: (listener) => subscribe(IPC.logEntry, listener),
+  overlayUrl: () => ipcRenderer.invoke(IPC.overlayUrl),
+  copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
 };
 
 contextBridge.exposeInMainWorld("saf", api);

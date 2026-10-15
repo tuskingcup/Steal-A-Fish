@@ -22,6 +22,8 @@ export const IPC = {
   roundStart: "round:start",
   roundEnd: "round:end",
   logEntry: "log:entry",
+  overlayUrl: "overlay:url",
+  copyText: "clipboard:write",
 } as const;
 
 export interface SimGiftInput {
@@ -80,5 +82,8 @@ export interface SafApi {
   onCatch(listener: (event: CatchEvent) => void): () => void;
   onJoined(listener: (event: JoinedEvent) => void): () => void;
   onSummary(listener: (summary: RoundSummary) => void): () => void;
+  /** The leaderboard overlay's link for TikTok LIVE Studio (null if no local port was free). */
+  overlayUrl(): Promise<string | null>;
+  copyText(text: string): Promise<void>;
   onLog(listener: (entry: LogEntry) => void): () => void;
 }
