@@ -12,6 +12,7 @@ import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPi
 import "@babylonjs/core/PostProcesses/RenderPipeline/postProcessRenderPipelineManagerSceneComponent";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import { createBoat } from "./boat";
+import { createRaft } from "./raft";
 import { createCrew, type Crew, type CrewMember } from "./crew";
 import { createBeach, createDock, createSea, createSky, DOCK_END, DOCK_TOP, HORIZON } from "./seaside";
 
@@ -34,8 +35,8 @@ interface CameraPose {
   radius: number;
 }
 
-/** Wide shot over the dock, the boat and the beach. */
-const OVERVIEW: CameraPose = { target: new Vector3(5.5, 1, DOCK_END + 1.5), alpha: 1.2, beta: 1.2, radius: 25 };
+/** Wide shot over the yacht, the dock, the rafts and the beach. */
+const OVERVIEW: CameraPose = { target: new Vector3(4, 0.5, DOCK_END + 4), alpha: 0.6, beta: 0.95, radius: 42 };
 /** Close-up framing: three-quarter front view at chest height. */
 const CLOSE_RADIUS = 5.5;
 const CLOSE_BETA = 1.28;
@@ -64,7 +65,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   camera.lowerBetaLimit = 0.45;
   camera.upperBetaLimit = 1.45;
   camera.lowerRadiusLimit = 4;
-  camera.upperRadiusLimit = 30;
+  camera.upperRadiusLimit = 45;
   camera.panningSensibility = 0;
   camera.wheelDeltaPercentage = 0.01;
   camera.angularSensibilityX = 1400;
@@ -98,9 +99,19 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   createBeach(scene, shadows);
   createDock(scene, shadows);
 
-  // Long-tail boat off the dock's right side: the podium for ranks 1–3.
-  const boat = createBoat(scene, shadows, new Vector3(7.5, 0, DOCK_END + 4), 0);
-  const crew = createCrew(scene, engine, shadows, boat, host);
+  // Yacht off the dock's right side: the podium for ranks 1–3.
+  const boat = createBoat(scene, shadows, new Vector3(9, 0, DOCK_END + 5.5), 0);
+  // Bamboo rafts around the bay give the crowd more room to fish.
+  const rafts = (
+    [
+      [-9.5, 4.5, 0.2],
+      [-18, 3, -0.3],
+      [17, 3, 0.4],
+      [-4, 14, 0.1],
+      [15, 15, -0.2],
+    ] as const
+  ).map(([x, z, heading], i) => createRaft(scene, shadows, new Vector3(x, 0, z), heading, i));
+  const crew = createCrew(scene, engine, shadows, boat, rafts, host);
 
   // HD-2D post stack: tilt-shift DOF, bloom, vignette, grain.
   const pipeline = new DefaultRenderingPipeline("hd2d", true, scene, [camera]);

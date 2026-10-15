@@ -18,12 +18,13 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { avatarFor, hashString, type Avatar } from "@saf/core";
 import { createFisherSprite, pumpSpriteBakes, rotateY, STANCES, type FisherSprite, type Stance } from "./fisherSprite";
 import { flat, hash01, lowPolyMat } from "./materials";
-import type { Boat } from "./boat";
+import type { Boat, Floater } from "./boat";
+import { RAFT_SEATS } from "./raft";
 import { beachHeight, DOCK_END, DOCK_TOP, PALMS, ROCKS, shorelineZ, waveHeight } from "./seaside";
 
 // ---------- Fishing spots ----------
 
-type SpotKind = "boat" | "dock" | "beach";
+type SpotKind = "boat" | "dock" | "raft" | "beach";
 
 interface SpotRef {
   kind: SpotKind;
@@ -48,14 +49,14 @@ const DOCK: Pose[] = [
   ]),
 ];
 
-const BEACH_SPOTS = 36;
+const BEACH_SPOTS = 50;
 
 /** Standing spots along the waterline, nearest the dock first, clear of rocks and palms. */
 const BEACH: Pose[] = (() => {
   const spots: Pose[] = [];
-  for (let k = 0; k < 22; k++) {
+  for (let k = 0; k < 30; k++) {
     for (const side of [1, -1]) {
-      const x = side * (3.4 + k * 1.7);
+      const x = side * (3.4 + k * 1.35);
       const z = shorelineZ(x, 0.3);
       const clear =
         ROCKS.every(([rx, rz, s]) => Math.hypot(rx - x, rz - z) > s + 1) && PALMS.every(([px, pz]) => Math.hypot(px - x, pz - z) > 1.2);
@@ -68,13 +69,18 @@ const BEACH: Pose[] = (() => {
   return spots.slice(0, BEACH_SPOTS);
 })();
 
-/** Where people fish when they aren't on the podium: dock first (after the host's seat), then the beach. */
+/** Bamboo rafts out in the water (positions are set in scene.ts). */
+export const RAFT_COUNT = 5;
+const RAFT_REACH = 2.8;
+
+/** Where people fish when they aren't on the podium: dock first (after the host's seat), then the rafts, then the beach. */
 const REGULAR: SpotRef[] = [
   ...DOCK.slice(1).map((_, i) => ({ kind: "dock" as const, index: i + 1 })),
+  ...Array.from({ length: RAFT_COUNT * RAFT_SEATS }, (_, i) => ({ kind: "raft" as const, index: i })),
   ...BEACH.map((_, i) => ({ kind: "beach" as const, index: i })),
 ];
 
-const BOAT_REACH = [3.6, 3, 3];
+const BOAT_REACH = [4, 3.4, 3.4];
 const sameSpot = (a: SpotRef, b: SpotRef) => a.kind === b.kind && a.index === b.index;
 
 // ---------- Crew ----------
@@ -165,12 +171,20 @@ export interface Crew {
   /** Ranks 1–3, best first: they fish from the boat; #1 wears the crown. */
   setPodium(userIds: string[]): void;
   update(camera: Camera, timeSec: number, dt: number): void;
-  /** Everyone fishing, in tour order: boat (by rank), dock, then the beach from left to right. */
+  /** Everyone fishing, in tour order: boat (by rank), dock, rafts, then the beach from left to right. */
   tour(): FocusTarget[];
   nameTags(camera: Camera, focusedId: string | null): NameTag[];
 }
 
-export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerator, boat: Boat, host: CrewMember): Crew {
+export function createCrew(
+  scene: Scene,
+  engine: Engine,
+  shadows: ShadowGenerator,
+  boat: Boat,
+  rafts: Floater[],
+  host: CrewMember,
+): Crew {
+  if (rafts.length !== RAFT_COUNT) throw new Error(`expected ${RAFT_COUNT} rafts`);
   const fishers = new Map<string, Fisher>();
   let podium: string[] = [];
   let now = 0;
@@ -184,6 +198,10 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
     if (ref.kind === "boat") {
       const seat = boat.seat(ref.index);
       return { pos: seat.pos, yaw: seat.yaw, stance: "sit", reach: BOAT_REACH[ref.index]! };
+    }
+    if (ref.kind === "raft") {
+      const seat = rafts[Math.floor(ref.index / RAFT_SEATS)]!.seat(ref.index % RAFT_SEATS);
+      return { pos: seat.pos, yaw: seat.yaw, stance: "sit", reach: RAFT_REACH };
     }
     return (ref.kind === "dock" ? DOCK : BEACH)[ref.index]!;
   };
@@ -353,6 +371,7 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
     update(camera, timeSec, dt) {
       now = timeSec;
       boat.update(timeSec);
+      for (const raft of rafts) raft.update(timeSec);
       pumpSpriteBakes(scene, BAKE_BUDGET_MS);
       const visibleLines: Vector3[][] = [];
       for (const f of [...fishers.values()]) {
@@ -366,7 +385,7 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
         f.jerk = Math.max(0, f.jerk - dt * 2.5);
         f.pop = Math.max(0, f.pop - dt * 3);
 
-        // Boat seats move with the waves.
+        // Boat and raft seats move with the waves.
         const pose = poseOf(f.spot);
         f.root.position.copyFrom(pose.pos);
         f.root.rotation.y = pose.yaw;
@@ -403,7 +422,13 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
 
     tour() {
       const order = (f: Fisher) =>
-        f.spot.kind === "boat" ? f.spot.index : f.spot.kind === "dock" ? 10 + f.spot.index : 100 + BEACH[f.spot.index]!.pos.x;
+        f.spot.kind === "boat"
+          ? f.spot.index
+          : f.spot.kind === "dock"
+            ? 10 + f.spot.index
+            : f.spot.kind === "raft"
+              ? 20 + f.spot.index
+              : 100 + BEACH[f.spot.index]!.pos.x;
       return [...fishers.values()]
         .filter((f) => !f.leaving)
         .sort((a, b) => order(a) - order(b))
