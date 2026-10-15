@@ -38,8 +38,6 @@
     #roundbar .pill { background: #071C29D9; border: 2px solid #2D6E84; border-radius: 999px; padding: 3px 12px; font-weight: 600; }
     #roundbar .clock { color: #FFC23D; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: center; }
     #roundbar .clock.low { color: #FF5C5C; }
-    #joinhint { font-size: 15px; font-weight: 700; color: #071C29; background: #FFC23D; border-radius: 10px; padding: 4px 12px; align-self: flex-start; box-shadow: 0 2px 0 #0006; }
-    #joinhint small { display: block; font-size: 12px; font-weight: 600; }
 
     #card { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: 82%; max-width: 440px; text-align: center; pointer-events: none;
       background: #071C29F0; border: 3px solid var(--rc); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 0 28px var(--rc); display: none; }
@@ -72,10 +70,10 @@
     #summary .exprice { font-size: 26px; font-weight: 900; color: #FFD866; text-shadow: 0 2px 0 #0009; margin-top: 2px; }
     #summary .exprice small { color: #9FE3E6; font-size: 12px; font-weight: 400; margin-left: 10px; }
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
-    body.in-summary #feed, body.in-summary #joinhint { display: none; }
+    body.in-summary #feed { display: none; }
 
     /* Big-catch reveal */
-    body.revealing #feed, body.revealing #joinhint, body.revealing #tags, body.revealing #card { display: none; }
+    body.revealing #feed, body.revealing #tags, body.revealing #card { display: none; }
     body.exhibiting #tags, body.exhibiting #card { display: none; }
     #reveal { position: fixed; left: 50%; transform: translateX(-50%); width: 86%; max-width: 460px; text-align: center; pointer-events: none; display: none; }
     #reveal.hook { display: block; top: 30%; animation: pop .3s cubic-bezier(.2,1.6,.4,1); }
@@ -110,7 +108,6 @@
   <div id="flash"></div>
   <div id="hud">
     <div id="roundbar"></div>
-    <div id="joinhint"></div>
     <div id="feed"></div>
   </div>
   <script type="module" src="./main.ts"></script>

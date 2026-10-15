@@ -1,4 +1,4 @@
-import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary, type RulesConfig } from "@saf/core";
+import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
 import { fishLengthMeters } from "./reveal";
 import { finishFor, isDense } from "./fishModels";
 import { createPondScene } from "./scene";
@@ -8,7 +8,6 @@ const canvas = document.getElementById("scene") as HTMLCanvasElement;
 const feed = document.getElementById("feed") as HTMLDivElement;
 const tagLayer = document.getElementById("tags") as HTMLDivElement;
 const roundbar = document.getElementById("roundbar") as HTMLDivElement;
-const joinhint = document.getElementById("joinhint") as HTMLDivElement;
 const card = document.getElementById("card") as HTMLDivElement;
 const summaryEl = document.getElementById("summary") as HTMLDivElement;
 const revealEl = document.getElementById("reveal") as HTMLDivElement;
@@ -37,15 +36,6 @@ function push(html: string): void {
 
 let round: RoundState = { phase: "idle", round: 0, endsAt: null, players: 0 };
 
-/** How many of their own likes a viewer needs for one cast (from rules.json), for the hint. */
-let likesPerCast: number | null = null;
-function readLikesPerCast(config: RulesConfig): void {
-  const rule = config.rules.find((r) => r.enabled && r.trigger.type === "likes" && r.trigger.perViewer && r.action.type === "cast");
-  likesPerCast = rule && rule.trigger.type === "likes" ? rule.trigger.every : null;
-}
-void window.saf.getRules().then(readLikesPerCast);
-window.saf.onRulesChanged(readLikesPerCast);
-
 function renderRoundBar(): void {
   const left = round.endsAt === null ? 0 : round.endsAt - Date.now();
   const clock =
@@ -55,9 +45,6 @@ function renderRoundBar(): void {
     `<span class="pill">${esc(th.round(Math.max(round.round, 1)))}</span>` +
     `<span class="pill clock${low}">${esc(clock)}</span>` +
     `<span class="pill">${esc(th.players(round.players))}</span>`;
-  const hint = round.phase === "open" ? th.joinHint : th.joinNextHint;
-  const html = `${esc(hint)}${likesPerCast ? `<small>${esc(th.likeHint(likesPerCast))}</small>` : ""}`;
-  if (joinhint.innerHTML !== html) joinhint.innerHTML = html;
 }
 setInterval(renderRoundBar, 250);
 renderRoundBar();

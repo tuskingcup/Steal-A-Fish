@@ -6,9 +6,6 @@ export const th = {
   hostName: "เจ้าของท่าเรือ",
   newChampion: "ขึ้นอันดับ 1 แล้ว!",
   joinHint: "พิมพ์ 1 ในแชทเพื่อร่วมเล่น",
-  /** Round-bar hint: how fishing works. */
-  likeHint: (likes: number) => `กดใจ ${likes} ครั้ง = ตกปลา 1 ครั้ง · ส่งของขวัญ = การันตีแต้ม`,
-  joinNextHint: "พิมพ์ 1 เพื่อจองรอบหน้า",
   joined: "ร่วมเล่นรอบนี้แล้ว!",
   queuedNext: "จองที่รอบหน้าแล้ว",
   round: (n: number) => `รอบที่ ${n}`,
