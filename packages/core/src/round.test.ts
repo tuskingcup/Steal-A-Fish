@@ -129,8 +129,9 @@ describe("RoundGame", () => {
   });
 
   it("keeps every gift tier's fish within its points range and rarity band", () => {
-    const tiers = ["gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts"];
+    const tiers = ["likes-cast", "gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts"];
     const ranges: Record<string, [number, number]> = {
+      "likes-cast": [50, 300],
       "gift-rose": [50, 600],
       "gift-finger-heart": [250, 3_000],
       "gift-rosa": [500, 6_000],

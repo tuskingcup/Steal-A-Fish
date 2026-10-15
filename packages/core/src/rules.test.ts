@@ -124,6 +124,7 @@ describe("parseRulesConfig", () => {
   it("ships default rules that parse, with likes casting per viewer", () => {
     const parsed = parseRulesConfig(defaultRulesConfig);
     expect(parsed.rules.find((r) => r.id === "likes-cast")?.trigger).toEqual({ type: "likes", every: 50, perViewer: true });
+    expect(parsed.rules.find((r) => r.id === "likes-cast")?.action).toMatchObject({ minPoints: 50, maxPoints: 300 });
   });
 });
 
@@ -150,6 +151,14 @@ describe("default rules", () => {
     const v3 = { version: 3, rules: defaultRulesConfig.rules.map((r) => (r.id === "gift-rose" ? { ...r, action: { type: "cast" as const, count: 1, minPoints: 50 } } : r)) };
     const up = upgradeRulesConfig(v3, defaultRulesConfig, 4, { 4: ["gift-rose"] });
     expect(up.rules.find((r) => r.id === "gift-rose")!.action).toEqual(defaultRulesConfig.rules.find((r) => r.id === "gift-rose")!.action);
+  });
+
+  it("re-balance the likes reward without losing the streamer's likes count", () => {
+    const v5 = { version: 5, rules: [{ id: "likes-cast", enabled: true, oncePerUser: false, trigger: { type: "likes" as const, every: 30, perViewer: true }, action: { type: "cast" as const, count: 1 } }] };
+    const up = upgradeRulesConfig(v5, defaultRulesConfig, 6, { 6: ["likes-cast"] });
+    const likes = up.rules.find((r) => r.id === "likes-cast")!;
+    expect(likes.trigger).toEqual({ type: "likes", every: 30, perViewer: true });
+    expect(likes.action).toEqual({ type: "cast", count: 1, maxRarity: "rare", minPoints: 50, maxPoints: 300 });
   });
 });
 

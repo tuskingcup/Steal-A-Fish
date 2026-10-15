@@ -91,7 +91,7 @@ export function parseRulesConfig(input: unknown): RulesConfig {
  * Bring a rules.json from an older version up to date. Before version 2 the rules had a different
  * shape, so they are replaced outright. From version 2 on, the streamer's edits are kept: default
  * rules they don't have yet (by id) are added, and rules listed in `refresh` for a version passed
- * (e.g. re-balanced gifts) are reset to the new defaults.
+ * (re-balances) get the new default reward (action) while keeping their trigger.
  */
 export function upgradeRulesConfig(config: RulesConfig, defaults: RulesConfig, version: number, refresh: Record<number, string[]> = {}): RulesConfig {
   const from = config.version ?? 1;
@@ -100,7 +100,7 @@ export function upgradeRulesConfig(config: RulesConfig, defaults: RulesConfig, v
   const reset = new Set<string>();
   for (const [v, ids] of Object.entries(refresh)) if (Number(v) > from && Number(v) <= version) for (const id of ids) reset.add(id);
   const byId = new Map(defaults.rules.filter((r) => r.id !== undefined).map((r) => [r.id!, r]));
-  const kept = config.rules.map((r) => (r.id !== undefined && reset.has(r.id) && byId.has(r.id) ? byId.get(r.id)! : r));
+  const kept = config.rules.map((r) => (r.id !== undefined && reset.has(r.id) && byId.has(r.id) ? { ...r, action: byId.get(r.id)!.action } : r));
   const have = new Set(kept.map((r) => r.id));
   return { version, rules: [...kept, ...defaults.rules.filter((r) => r.id === undefined || !have.has(r.id))] };
 }

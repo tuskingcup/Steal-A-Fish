@@ -1,13 +1,20 @@
 import type { CastAction, RulesConfig } from "./rules";
 
 /** Bump when the default rules change; rules.json files from older versions are replaced. */
-export const RULES_VERSION = 5;
+export const RULES_VERSION = 6;
 
-/** Rules reset to the new defaults when a rules.json is upgraded past a version (re-balances). */
+/**
+ * Rules whose reward (action) is reset to the new default when a rules.json is upgraded past a
+ * version (re-balances). Their triggers — e.g. how many likes the streamer set — are kept.
+ */
 export const RULES_REFRESH: Record<number, string[]> = {
   4: ["gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts", "gift-orange-heart-lucky", "follow-rosa"],
   5: ["gift-hand-hearts", "gift-orange-heart-lucky"],
+  6: ["likes-cast"],
 };
+
+/** Every N of a viewer's own likes: one cast worth 50–300 points (Common–Rare). */
+const LIKES: CastAction = { type: "cast", count: 1, maxRarity: "rare", minPoints: 50, maxPoints: 300 };
 
 /**
  * Gift tiers: one cast per gift, its points kept within the tier's range and its rarity within a
@@ -33,9 +40,9 @@ export const defaultRulesConfig: RulesConfig = {
       id: "likes-cast",
       enabled: true,
       oncePerUser: false,
-      // Every 50 of a viewer's own likes is one cast for them.
+      // Every 50 of a viewer's own likes is one cast for them, worth 50–300 points.
       trigger: { type: "likes", every: 50, perViewer: true },
-      action: { type: "cast", count: 1 },
+      action: LIKES,
     },
     { id: "gift-rose", enabled: true, oncePerUser: false, trigger: { type: "gift", minDiamonds: 1 }, action: ROSE },
     { id: "gift-finger-heart", enabled: true, oncePerUser: false, trigger: { type: "gift", minDiamonds: 5 }, action: FINGER_HEART },
