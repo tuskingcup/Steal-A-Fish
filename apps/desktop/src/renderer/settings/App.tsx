@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { MUTATIONS, PITY_CASTS, RARITIES, rarityPercents, SPECIES, type RoundState } from "@saf/core";
+import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, type RoundState } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
-import { describeAction, describeEvent, formatClock, mutationTh, rarityTh, speciesTh, th } from "../shared/strings.th";
+import { describeAction, describeEvent, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../shared/strings.th";
 
 /** Public drop table (shown to everyone: no hidden odds). */
 const PERCENTS = rarityPercents();
@@ -139,6 +139,24 @@ export function App() {
             ))}
           </tbody>
         </table>
+        <h2>{th.sizeRates}</h2>
+        <table className="rates">
+          <tbody>
+            {SIZE_CLASSES.map((c) => {
+              const lo = Math.round(10 ** c.weightLog10[0]).toLocaleString("th-TH");
+              const hi = Math.round(10 ** c.weightLog10[1]).toLocaleString("th-TH");
+              return (
+                <tr key={c.id}>
+                  <td>
+                    {sizeClassTh[c.id] || th.sizeNormal}
+                    {c.id !== "normal" && ` (${th.sizeEffect(`${lo}–${hi}`, c.priceMultiplier.toLocaleString("th-TH"))})`}
+                  </td>
+                  <td>{fmtPct((c.id === "normal" ? NORMAL_SIZE_CHANCE : c.chance) * 100)}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
         <h2>{th.mutationRates}</h2>
         <table className="rates">
           <tbody>
@@ -162,7 +180,7 @@ export function App() {
                   {speciesTh[sp.id] ?? sp.id} · {rarityTh[sp.rarity]}
                 </td>
                 <td>
-                  {sp.price.toLocaleString("th-TH")} {th.coinsUnit}
+                  ~{formatWeight(sp.baseLog10)} · {sp.price.toLocaleString("th-TH")} {th.coinsUnit}
                 </td>
               </tr>
             ))}

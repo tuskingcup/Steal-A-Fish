@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRarePlus, PITY_CASTS, priceOf, rarityPercents, rollCatch, SPECIES } from "./fish";
+import { isRarePlus, NORMAL_SIZE_CHANCE, PITY_CASTS, priceOf, rarityPercents, rollCatch, SIZE_CLASSES, SPECIES } from "./fish";
 import { createSeededRng } from "./rng";
 
 describe("rollCatch", () => {
@@ -36,12 +36,30 @@ describe("rollCatch", () => {
     for (const [rarity, pct] of Object.entries(expected)) expect(((counts[rarity] ?? 0) / N) * 100).toBeCloseTo(pct, 0);
   });
 
-  it("weighs millions of kg or more, with mutations stacking", () => {
+  it("catches mostly real-world sized fish, with rare giants", () => {
+    const rng = createSeededRng(4);
+    const N = 50_000;
+    const counts: Record<string, number> = {};
+    let realistic = 0;
+    for (let i = 0; i < N; i++) {
+      const { fish } = rollCatch(rng, { pity: 0 });
+      counts[fish.sizeClass] = (counts[fish.sizeClass] ?? 0) + 1;
+      if (fish.sizeClass === "normal" && fish.mutations.length === 0) {
+        expect(fish.weightLog10).toBeLessThan(Math.log10(20_000)); // nothing silly without a giant class or a mutation
+        if (fish.weightLog10 < Math.log10(100)) realistic++;
+      }
+    }
+    expect(realistic / N).toBeGreaterThan(0.8); // the everyday catch weighs what a real fish weighs
+    expect(((counts.normal ?? 0) / N) * 100).toBeCloseTo(NORMAL_SIZE_CHANCE * 100, 0);
+    for (const c of SIZE_CLASSES) if (c.chance > 0) expect(((counts[c.id] ?? 0) / N) * 100).toBeCloseTo(c.chance * 100, 0);
+  });
+
+  it("has valid species and stacking mutations", () => {
     const rng = createSeededRng(3);
     let mutated = 0;
     for (let i = 0; i < 5_000; i++) {
       const { fish } = rollCatch(rng, { pity: 0 });
-      expect(fish.weightLog10).toBeGreaterThan(5);
+      expect(fish.weightLog10).toBeGreaterThan(-1.5);
       expect(SPECIES.some((s) => s.id === fish.speciesId && s.rarity === fish.rarity)).toBe(true);
       if (fish.mutations.length > 0) mutated++;
     }
@@ -55,11 +73,12 @@ describe("rollCatch", () => {
     expect(priceOf("tilapia", 1, ["gold", "diamond"])).toBe(300); // multipliers stack
     expect(priceOf("nagaFish", 1, [])).toBeGreaterThan(priceOf("mekongGiantCatfish", 1, []));
     expect(priceOf("tilapia", 0.01, [])).toBe(1); // never free
+    expect(priceOf("tilapia", 1, [], "giant")).toBe(200); // size classes multiply gently
 
     const rng = createSeededRng(21);
     for (let i = 0; i < 1_000; i++) {
       const { fish } = rollCatch(rng, { pity: 0 });
-      expect(fish.price).toBe(priceOf(fish.speciesId, fish.size, fish.mutations));
+      expect(fish.price).toBe(priceOf(fish.speciesId, fish.size, fish.mutations, fish.sizeClass));
     }
   });
 

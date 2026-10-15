@@ -1,4 +1,4 @@
-import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
+import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
 import { fishLengthMeters } from "./reveal";
 import { isDense } from "./fishModels";
 import { createPondScene } from "./scene";
@@ -106,7 +106,7 @@ function showNextCard(): void {
   card.className = `r-${e.fish.rarity}`;
   card.innerHTML =
     `<div class="who"><b>@${esc(e.name)}</b> ${esc(th.caught)}</div>` +
-    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations))}</div>` +
+    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</div>` +
     `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
     `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>` +
@@ -120,21 +120,22 @@ window.saf.onCatch((e) => {
   crew.join({ userId: e.userId, name: e.name });
   crew.cast(e.userId);
   // Commons only show up as a cast; anything better (or mutated) makes the feed.
-  if (rarityRank(e.fish.rarity) >= rarityRank("uncommon") || e.fish.mutations.length > 0) {
+  const notable = e.fish.mutations.length > 0 || e.fish.sizeClass !== "normal";
+  if (rarityRank(e.fish.rarity) >= rarityRank("uncommon") || notable) {
     push(
-      `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations))}</span> ` +
+      `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</span> ` +
         `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatCoins(e.fish.price))}</span>`,
     );
   }
   if (wantsReveal(e) && queueReveal(e)) return;
-  if (rarityRank(e.fish.rarity) >= rarityRank("rare") || e.fish.mutations.length > 0) queueCard(e);
+  if (rarityRank(e.fish.rarity) >= rarityRank("rare") || (notable && e.fish.sizeClass !== "big")) queueCard(e);
 });
 
 // ---------- Big-catch reveal queue ----------
 
 /**
- * Legendary and Mythic catches, density mutations (the dock-breaking joke), and Epic catches that
- * are the player's new best get the full reveal. With a big crowd these can pile up, so at most
+ * Legendary and Mythic catches, titan/colossal size classes, density mutations (the dock-breaking
+ * joke), and Epic catches that are the player's new best get the full reveal. With a big crowd these can pile up, so at most
  * two wait; the rest fall back to a card. Mythic and the dense joke jump the queue.
  */
 const revealQueue: CatchEvent[] = [];
@@ -142,12 +143,12 @@ const MAX_REVEALS_WAITING = 2;
 
 function wantsReveal(e: CatchEvent): boolean {
   const r = rarityRank(e.fish.rarity);
-  return r >= rarityRank("legendary") || isDense(e.fish.mutations) || (r === rarityRank("epic") && e.personalBest);
+  return r >= rarityRank("legendary") || isDense(e.fish.mutations) || isHuge(e.fish.sizeClass) || (r === rarityRank("epic") && e.personalBest);
 }
 
 function queueReveal(e: CatchEvent): boolean {
   if (summary) return false;
-  const urgent = e.fish.rarity === "mythic" || isDense(e.fish.mutations);
+  const urgent = e.fish.rarity === "mythic" || isDense(e.fish.mutations) || e.fish.sizeClass === "colossal";
   if (revealQueue.length >= MAX_REVEALS_WAITING && !urgent) return false;
   if (urgent) revealQueue.unshift(e);
   else revealQueue.push(e);
@@ -196,7 +197,7 @@ function renderReveal(): void {
   revealEl.className = `${stage} r-${e.fish.rarity}`;
   revealEl.innerHTML =
     `<div class="who"><b>@${esc(e.name)}</b> ${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
-    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
+    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
     `<div class="len">${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
     `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>`;
@@ -281,7 +282,7 @@ function renderSummary(): void {
       .map(
         (f) =>
           `<div class="fish r-${f.rarity}"><span class="chip">${esc(rarityTh[f.rarity])}</span>` +
-          `<span class="fname">${esc(fishName(f.speciesId, f.mutations))}<small>${esc(formatWeight(f.weightLog10))}</small></span>` +
+          `<span class="fname">${esc(fishName(f.speciesId, f.mutations, f.sizeClass))}<small>${esc(formatWeight(f.weightLog10))}</small></span>` +
           `<span class="fw coin">${esc(formatCoins(f.price))}</span></div>`,
       )
       .join("");

@@ -1,4 +1,4 @@
-import type { Action, LiveEvent, MutationId, Rarity, RoundPhase } from "@saf/core";
+import type { Action, LiveEvent, MutationId, Rarity, RoundPhase, SizeClass } from "@saf/core";
 
 /** All player-facing Thai text lives here. */
 export const th = {
@@ -69,6 +69,9 @@ export const th = {
   roundRules: "รอบละ 5 นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · ทุกคนที่ร่วมเหวี่ยงเบ็ดฟรีทุก 30 วิ · ของขวัญ = เหวี่ยงเพิ่ม (ส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากมูลค่ารวมของปลาทุกตัวที่ตกได้",
   dropRates: "อัตราการได้ปลา (ต่อการเหวี่ยง 1 ครั้ง)",
   mutationRates: "โอกาสกลายพันธุ์ (ซ้อนกันได้)",
+  sizeRates: "ขนาดตัว (ส่วนใหญ่ขนาดปกติ)",
+  sizeNormal: "ปกติ",
+  sizeEffect: (weight: string, price: string) => `น้ำหนัก ×${weight}, ราคา ×${price}`,
   pityNote: "การันตีปลาระดับหายากขึ้นไป ภายใน 30 ครั้ง · FISH FRENZY เพิ่มโอกาสปลาหายาก",
   noRealValue: "เหรียญและปลาไม่มีมูลค่าจริง แลกเป็นเงินหรือของใด ๆ ไม่ได้ และโอนให้กันไม่ได้",
   cameraKeys: "หน้าต่างเกม: ← / → ดูคนตกปลาทีละคน · Esc กลับภาพรวม · ลากเมาส์หมุนกล้อง · ล้อเมาส์ซูม",
@@ -148,9 +151,18 @@ export const speciesTh: Record<string, string> = {
   nagaFish: "ปลาพญานาค",
 };
 
-/** "ปลาบึก ทองคำ เพชร" — species plus any mutations. */
-export function fishName(speciesId: string, mutations: readonly MutationId[]): string {
-  return [speciesTh[speciesId] ?? speciesId, ...mutations.map((m) => mutationTh[m])].join(" ");
+/** Size classes; a normal-sized fish gets no label. */
+export const sizeClassTh: Record<SizeClass, string> = {
+  normal: "",
+  big: "ตัวโต",
+  giant: "ยักษ์",
+  titan: "ไททัน",
+  colossal: "มหึมา",
+};
+
+/** "ปลาบึก ยักษ์ ทองคำ เพชร" — species, size class (if not normal), then any mutations. */
+export function fishName(speciesId: string, mutations: readonly MutationId[], sizeClass: SizeClass = "normal"): string {
+  return [speciesTh[speciesId] ?? speciesId, sizeClassTh[sizeClass], ...mutations.map((m) => mutationTh[m])].filter(Boolean).join(" ");
 }
 
 const thNumber = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
@@ -173,8 +185,10 @@ function formatBig(log10: number, unit: string): string {
   return `${mantissa.toFixed(digits)} ${small >= 0 ? SMALL_UNITS[small] : ""}${"ล้าน".repeat(groups)} ${unit}`;
 }
 
-/** Weight from log10(kg), e.g. "4.18 หมื่นล้าน กก.". */
+/** Weight from log10(kg): "150 กรัม", "2.4 กก.", "12,500 กก.", "4.18 หมื่นล้าน กก.". */
 export function formatWeight(log10: number): string {
+  if (Number.isFinite(log10) && log10 < 0) return `${thNumber.format(Math.max(1, 10 ** (log10 + 3)))} กรัม`;
+  if (Number.isFinite(log10) && log10 < 1) return `${(10 ** log10).toFixed(1)} กก.`;
   return formatBig(log10, "กก.");
 }
 
