@@ -1,6 +1,8 @@
 import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
+import { fishLengthMeters } from "./reveal";
+import { isDense } from "./fishModels";
 import { createPondScene } from "./scene";
-import { describeAction, fishName, formatClock, formatCoins, formatWeight, rarityTh, th } from "../shared/strings.th";
+import { describeAction, fishName, formatClock, formatCoins, formatLength, formatWeight, rarityTh, th } from "../shared/strings.th";
 
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
 const feed = document.getElementById("feed") as HTMLDivElement;
@@ -9,6 +11,9 @@ const roundbar = document.getElementById("roundbar") as HTMLDivElement;
 const joinhint = document.getElementById("joinhint") as HTMLDivElement;
 const card = document.getElementById("card") as HTMLDivElement;
 const summaryEl = document.getElementById("summary") as HTMLDivElement;
+const revealEl = document.getElementById("reveal") as HTMLDivElement;
+const revealLabels = document.getElementById("revealLabels") as HTMLDivElement;
+const flashEl = document.getElementById("flash") as HTMLDivElement;
 (document.getElementById("title") as HTMLDivElement).textContent = th.gameTitle;
 (document.getElementById("pond") as HTMLDivElement).textContent = th.pondVillage;
 
@@ -86,6 +91,11 @@ function queueCard(e: CatchEvent): void {
 }
 
 function showNextCard(): void {
+  // Cards wait while a big-catch reveal has the screen.
+  if (pond.reveal.active()) {
+    setTimeout(showNextCard, 500);
+    return;
+  }
   const e = cardQueue.shift();
   if (!e) {
     cardBusy = false;
@@ -116,8 +126,82 @@ window.saf.onCatch((e) => {
         `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatCoins(e.fish.price))}</span>`,
     );
   }
+  if (wantsReveal(e) && queueReveal(e)) return;
   if (rarityRank(e.fish.rarity) >= rarityRank("rare") || e.fish.mutations.length > 0) queueCard(e);
 });
+
+// ---------- Big-catch reveal queue ----------
+
+/**
+ * Legendary and Mythic catches, density mutations (the dock-breaking joke), and Epic catches that
+ * are the player's new best get the full reveal. With a big crowd these can pile up, so at most
+ * two wait; the rest fall back to a card. Mythic and the dense joke jump the queue.
+ */
+const revealQueue: CatchEvent[] = [];
+const MAX_REVEALS_WAITING = 2;
+
+function wantsReveal(e: CatchEvent): boolean {
+  const r = rarityRank(e.fish.rarity);
+  return r >= rarityRank("legendary") || isDense(e.fish.mutations) || (r === rarityRank("epic") && e.personalBest);
+}
+
+function queueReveal(e: CatchEvent): boolean {
+  if (summary) return false;
+  const urgent = e.fish.rarity === "mythic" || isDense(e.fish.mutations);
+  if (revealQueue.length >= MAX_REVEALS_WAITING && !urgent) return false;
+  if (urgent) revealQueue.unshift(e);
+  else revealQueue.push(e);
+  if (revealQueue.length > MAX_REVEALS_WAITING) revealQueue.pop();
+  if (!pond.reveal.active()) playNextReveal();
+  return true;
+}
+
+let revealing: CatchEvent | null = null;
+
+function playNextReveal(): void {
+  const e = revealQueue.shift();
+  revealing = e ?? null;
+  if (!e) {
+    revealEl.className = "";
+    return;
+  }
+  pond.playReveal({ userId: e.userId, fish: e.fish }, playNextReveal);
+}
+
+let lastStage: string | null = null;
+function renderReveal(): void {
+  const stage = pond.reveal.stageOf();
+  if (stage !== lastStage) {
+    // White flash on the cut to the stage and on the cut back.
+    if ((lastStage === "hook" && stage === "stage") || (lastStage !== null && stage === null)) {
+      flashEl.className = "";
+      void flashEl.offsetWidth;
+      flashEl.className = "go";
+    }
+    lastStage = stage;
+  }
+  document.body.classList.toggle("revealing", stage === "stage" || stage === "info");
+  const e = revealing;
+  if (!e || !stage) {
+    revealEl.className = "";
+    revealLabels.innerHTML = "";
+    return;
+  }
+  const dense = isDense(e.fish.mutations);
+  if (stage === "hook") {
+    revealEl.className = `hook r-${e.fish.rarity}`;
+    revealEl.innerHTML = `<div class="big">${esc(th.hooked)}</div><div class="who">@${esc(e.name)}</div>`;
+    return;
+  }
+  revealEl.className = `${stage} r-${e.fish.rarity}`;
+  revealEl.innerHTML =
+    `<div class="who"><b>@${esc(e.name)}</b> ${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
+    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
+    `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
+    `<div class="len">${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
+    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>`;
+}
+setInterval(renderReveal, 100);
 
 // Other actions (frenzy, collection, …) still show in the feed; casts are shown as catches.
 window.saf.onGameAction((fired) => {
@@ -152,6 +236,8 @@ window.saf.onSummary((s) => {
   selected = 0;
   holdUntil = Date.now() + FIRST_HOLD_MS; // let the winner sink in first
   cardQueue.length = 0;
+  revealQueue.length = 0;
+  pond.abortReveal();
   document.body.classList.add("in-summary");
   summaryEl.classList.add("show");
   renderSummary();
@@ -242,6 +328,23 @@ window.addEventListener("keydown", (e) => {
 // Name tags are HTML over the canvas: crisper Thai text than drawing it in the 3D scene.
 const tags = new Map<string, HTMLDivElement>();
 scene.onAfterRenderObservable.add(() => {
+  // Scale-reference labels on the reveal stage.
+  const cssScale = canvas.clientWidth / scene.getEngine().getRenderWidth();
+  const labels = pond.reveal.labels(cssScale);
+  while (revealLabels.children.length > labels.length) revealLabels.lastElementChild?.remove();
+  labels.forEach((l, i) => {
+    let el = revealLabels.children[i] as HTMLDivElement | undefined;
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "reflabel";
+      revealLabels.appendChild(el);
+    }
+    const text = th.refs[l.key] ?? l.key;
+    if (el.textContent !== text) el.textContent = text;
+    el.style.display = l.visible ? "" : "none";
+    el.style.transform = `translate(${l.x.toFixed(1)}px, ${l.y.toFixed(1)}px) translate(-50%, -100%)`;
+  });
+
   const seen = new Set<string>();
   for (const t of crew.nameTags(camera, pond.focusedId())) {
     seen.add(t.userId);

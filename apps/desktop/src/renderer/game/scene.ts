@@ -14,6 +14,7 @@ import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import { createBoat } from "./boat";
 import { createRaft } from "./raft";
 import { createShowcase, type TankOwner } from "./showcase";
+import { createReveal, type Reveal, type RevealRequest } from "./reveal";
 import { createCrew, type Crew, type CrewMember } from "./crew";
 import { createBeach, createDock, createSea, createSky, DOCK_END, DOCK_TOP, HORIZON } from "./seaside";
 
@@ -29,6 +30,10 @@ export interface PondScene {
   focusOn(userId: string): void;
   /** Show someone's catch swimming in the fish tank and fly there; null hides it. */
   showTank(owner: TankOwner | null): void;
+  /** Play the big-catch reveal; `onDone` runs when it ends (or is aborted). */
+  playReveal(request: RevealRequest, onDone: () => void): void;
+  abortReveal(): void;
+  reveal: Reveal;
   /** Who the camera is following, or null for the overview. */
   focusedId(): string | null;
 }
@@ -121,6 +126,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   const crew = createCrew(scene, engine, shadows, boat, rafts, host);
   // Fish tank on the beach behind the dock, shown during the round summary.
   const showcase = createShowcase(scene, shadows, -1.5, -24);
+  const reveal = createReveal(scene, camera);
 
   // HD-2D post stack: tilt-shift DOF, bloom, vignette, grain.
   const pipeline = new DefaultRenderingPipeline("hd2d", true, scene, [camera]);
@@ -175,6 +181,22 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
       startFly();
     }
   };
+  const playReveal = (request: RevealRequest, onDone: () => void): void => {
+    const before = focused;
+    reveal.play(
+      request,
+      (userId) => {
+        // Hook: fly to the catcher while their rod strikes a few times.
+        focusOn(userId);
+        for (const delay of [0, 380, 760]) setTimeout(() => crew.cast(userId), delay);
+      },
+      () => {
+        focused = before;
+        startFly();
+        onDone();
+      },
+    );
+  };
   const focusOn = (userId: string): void => {
     if (focused === userId || !crew.tour().some((t) => t.userId === userId)) return;
     focused = userId;
@@ -195,7 +217,12 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     if (frame++ % 2 === 0) sea.update(time);
     crew.update(camera, time, dt);
     showcase.update(camera, time);
+    reveal.update(dt);
 
+    if (reveal.ownsCamera()) {
+      pipeline.depthOfField.focusDistance = camera.radius * 1000;
+      return;
+    }
     let want = desiredPose();
     if (!want) {
       // The fisher we were following left: back to the overview.
@@ -220,7 +247,20 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
 
   engine.runRenderLoop(() => scene.render());
   window.addEventListener("resize", () => engine.resize());
-  return { engine, scene, camera, crew, focusStep, focusOverview, focusOn, showTank, focusedId: () => (focused === TANK ? null : focused) };
+  return {
+    engine,
+    scene,
+    camera,
+    crew,
+    focusStep,
+    focusOverview,
+    focusOn,
+    showTank,
+    playReveal,
+    abortReveal: () => reveal.abort(),
+    reveal,
+    focusedId: () => (focused === TANK ? null : focused),
+  };
 }
 
 function shortestAngle(from: number, to: number): number {

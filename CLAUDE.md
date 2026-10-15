@@ -6,7 +6,7 @@ Steal A Fish is a **desktop game for TikTok Live streamers**. Viewers drive the 
 
 Core idea: an idle/gacha fishing game with a "Steal an Egg"–style feel. Viewers cast lines with gifts and catch fish with absurd weights (millions to trillions of kg and beyond), collect them into a personal tank that generates coins, and steal fish from each other.
 
-Status: playable loop with the simulator — rounds, joining, catches (species, rarity, pity, mutations, weights), ranking and a round summary. Not built yet: persistence (SQLite), tank/coins, steal/guard, ponds beyond the village, the big catch reveal. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
+Status: playable loop with the simulator — rounds, joining, catches (species, rarity, pity, mutations, weights), ranking and a round summary. Not built yet: persistence (SQLite), tank/coins, steal/guard, ponds beyond the village. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
 
 ## Language
 
@@ -99,9 +99,9 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 - **Crown**: the #1 player wears a floating 3D gold crown (and a gold name tag). Rank lives in the main process (`RoundGame`'s `Leaderboard`, by total fish value; the top 3 go over IPC `game:podium`); the current champion keeps the crown on a tie.
 - **Avatars**: each viewer's face and outfit (skin, hair, hat, eyes, facial hair/glasses, top + pattern, neck wear, bottoms, shoes) comes from `avatarFor(userId)` in `packages/core` — deterministic from the userId, so the same viewer looks the same every stream with nothing stored. Sprite frames are cached per look.
 - Post-processing via `DefaultRenderingPipeline`: tilt-shift depth of field, bloom, vignette, light grain. Narrow-FOV perspective camera, ~30° downward.
-- **Big fish are shown big, not just as numbers.** Length scales with the cube root of weight. A catch plays a 6–8 s reveal: close-up reel-in → fish rises → camera dollies back while scale references enter the frame (dock, houses, temple, mountains, clouds, planet).
-- **Do not build kilometre-scale geometry.** Switch between scale tiers (pond → village → province → space), each authored at an engine-friendly scale, and fake distance with fog and DOF. Use logarithmic depth only if depth artifacts appear.
-- Density mutations (black hole, neutron star) are the opposite joke: a 2 cm fish that breaks the dock.
+- **Big fish are shown big, not just as numbers.** Length ≈ 0.4 m × kg^(1/3). The big-catch reveal (`reveal.ts`, ~8 s) plays for Legendary/Mythic, density mutations, and Epic personal bests: hook (camera flies to the catcher, rod strikes, "ติดเบ็ด!") → white flash to a reveal stage far out at sea → the fish bursts out of the water → the camera dollies back while scale references pop in beside it (the catcher's own sprite, boat, house, temple, skyscraper, Doi Inthanon, Everest, Moon, Earth — only those between ~1/60 and 2.5× the fish's length) → flash back. At most two reveals wait (Mythic and density jump the queue); the rest fall back to catch cards, which pause while a reveal plays.
+- **Do not build kilometre-scale geometry.** On the reveal stage the fish is always 4 units long and every reference is scaled to it (units per metre = 4 / fish length), so a 13 km fish next to Everest stays engine-friendly. Fake distance with fog and DOF. Use logarithmic depth only if depth artifacts appear.
+- Density mutations (black hole, neutron star) are the opposite joke: in the reveal a 2 cm glowing fish drops onto a dock beside the catcher and snaps it in half (camera shake).
 - Fish (`fishModels.ts`): one low-poly model per species built from a few parameters (body proportions, two-tone gradient + pattern in vertex colours, tail/dorsal shape, whiskers, crest, horns); the tail is a separate pivot that wiggles. Mutations are materials: gold, translucent diamond, pulsing lava glow, glowing neutron star, black body + orbiting accretion ring for black hole (the rarest mutation decides the look). A vertex-shader swim bend can replace the tail wiggle later.
 - Portrait 9:16, target 1080×1920 at 60 fps. Provide quality presets (DOF off, lower shadows, render scale) because the streamer's PC is also encoding video.
 

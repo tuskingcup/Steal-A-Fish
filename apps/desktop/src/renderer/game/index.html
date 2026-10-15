@@ -62,6 +62,25 @@
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
     body.in-summary #feed, body.in-summary #joinhint { display: none; }
 
+    /* Big-catch reveal */
+    body.revealing #feed, body.revealing #joinhint, body.revealing #tags, body.revealing #card { display: none; }
+    #reveal { position: fixed; left: 50%; transform: translateX(-50%); width: 86%; max-width: 460px; text-align: center; pointer-events: none; display: none; }
+    #reveal.hook { display: block; top: 30%; animation: pop .3s cubic-bezier(.2,1.6,.4,1); }
+    #reveal.hook .big { font-size: 64px; font-weight: 900; color: #FFC23D; text-shadow: 0 4px 0 #0009, 0 0 24px var(--rc); letter-spacing: 2px; }
+    #reveal.hook .who { font-size: 20px; font-weight: 700; text-shadow: 0 2px 0 #000a; }
+    #reveal.stage, #reveal.info { display: block; bottom: 28px; background: #071C29E8; border: 3px solid var(--rc); border-radius: 18px; padding: 12px 16px; box-shadow: 0 0 30px var(--rc); }
+    #reveal.info { animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
+    #reveal .who { font-size: 16px; color: #9FE3E6; }
+    #reveal .name { font-size: 26px; font-weight: 800; color: var(--rc); margin: 2px 0; }
+    #reveal .weight { font-size: 30px; font-weight: 800; text-shadow: 0 2px 0 #0008; }
+    #reveal .len { font-size: 18px; font-weight: 700; color: #FFFFFF; }
+    #reveal .price { font-size: 17px; font-weight: 700; margin-top: 2px; }
+    #revealLabels { position: fixed; inset: 0; pointer-events: none; }
+    .reflabel { position: absolute; left: 0; top: 0; font-size: 13px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #FFFFFFE6; color: #10202A; white-space: nowrap; }
+    #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+    #flash.go { animation: flash .5s ease-out; }
+    @keyframes flash { from { opacity: .95; } to { opacity: 0; } }
+
     @keyframes in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
   </style>
 </head>
@@ -70,6 +89,9 @@
   <div id="tags"></div>
   <div id="card"></div>
   <div id="summary"></div>
+  <div id="revealLabels"></div>
+  <div id="reveal"></div>
+  <div id="flash"></div>
   <div id="hud">
     <div id="title"></div>
     <div id="pond"></div>

@@ -32,6 +32,21 @@ export const th = {
   priceNote: "ราคาขาย = ราคาพันธุ์ปลา × ขนาดตัว (ใหญ่กว่าปกติ 2 เท่า ได้ 2 เท่า) × ตัวคูณการกลายพันธุ์ · อันดับคิดจากมูลค่ารวมของปลาทุกตัวในรอบ",
   noFish: "ยังไม่ได้ปลาเลย",
   browseHint: "← / → ดูปลาของแต่ละคน",
+  hooked: "ติดเบ็ด!",
+  bigCatch: "ได้ปลายักษ์!",
+  denseCatch: "ตัวจิ๋วแต่หนักจนท่าเรือพัง!",
+  lengthAbout: (len: string) => `ยาวประมาณ ${len}`,
+  refs: {
+    human: "คน",
+    boat: "เรือ",
+    house: "บ้าน",
+    temple: "วัด",
+    tower: "ตึกระฟ้า",
+    doiInthanon: "ดอยอินทนนท์",
+    everest: "เอเวอเรสต์",
+    moon: "ดวงจันทร์",
+    earth: "โลก",
+  } as Record<string, string>,
 
   settingsTitle: "ตั้งค่า Steal A Fish",
   connection: "เชื่อมต่อไลฟ์",
@@ -166,6 +181,14 @@ export function formatWeight(log10: number): string {
 /** In-game coins, e.g. "1,250 เหรียญ", "3.4 ล้าน เหรียญ". */
 export function formatCoins(coins: number): string {
   return `🪙 ${coins <= 0 ? "0 เหรียญ" : formatBig(Math.log10(coins), "เหรียญ")}`;
+}
+
+/** Fish length in Thai units: "2 ซม.", "34 เมตร", "3.4 กิโลเมตร", "12,000 กิโลเมตร". */
+export function formatLength(meters: number): string {
+  if (meters < 1) return `${Math.max(1, Math.round(meters * 100))} ซม.`;
+  if (meters < 1000) return `${meters < 10 ? meters.toFixed(1) : thNumber.format(meters)} เมตร`;
+  const km = meters / 1000;
+  return `${km < 10 ? km.toFixed(1) : thNumber.format(km)} กิโลเมตร`;
 }
 
 /** m:ss */
