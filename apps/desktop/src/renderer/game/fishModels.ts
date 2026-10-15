@@ -12,6 +12,7 @@ import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder";
 import { CreateTube } from "@babylonjs/core/Meshes/Builders/tubeBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { FresnelParameters } from "@babylonjs/core/Materials/fresnelParameters";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import type { MutationId } from "@saf/core";
@@ -422,13 +423,20 @@ function finishMaterial(scene: Scene, finish: Finish): StandardMaterial {
       m.emissiveColor = Color3.FromHexString("#FF5A12");
       break;
     case "neutronStar":
-      m.diffuseColor = Color3.FromHexString("#DDEBFF");
-      m.emissiveColor = Color3.FromHexString("#CFE2FF");
+      // Pale steel-blue body that keeps its shape, with a blazing blue-white rim.
+      m.diffuseColor = Color3.FromHexString("#9FB8E8");
+      m.specularColor = Color3.White();
+      m.specularPower = 64;
+      m.emissiveColor = Color3.FromHexString("#22386A");
+      m.emissiveFresnelParameters = rim("#E4F0FF", "#22386A", 1.6);
       break;
     case "blackHole":
-      m.diffuseColor = Color3.FromHexString("#08060C");
-      m.specularColor = new Color3(0.6, 0.4, 1);
-      m.emissiveColor = Color3.FromHexString("#140A28");
+      // Deep violet body outlined in bright violet light, so it stands out against the black hole.
+      m.diffuseColor = Color3.FromHexString("#3A2458");
+      m.specularColor = new Color3(0.8, 0.6, 1);
+      m.specularPower = 48;
+      m.emissiveColor = Color3.FromHexString("#2A1050");
+      m.emissiveFresnelParameters = rim("#F0C8FF", "#2A1050", 1.1);
       break;
     case "normal":
       break;
@@ -437,17 +445,9 @@ function finishMaterial(scene: Scene, finish: Finish): StandardMaterial {
   return m;
 }
 
-const accretionCache = new WeakMap<Scene, StandardMaterial>();
-
-function accretionMaterial(scene: Scene): StandardMaterial {
-  let m = accretionCache.get(scene);
-  if (!m) {
-    m = new StandardMaterial("accretionMat", scene);
-    m.emissiveColor = Color3.FromHexString("#B46CFF");
-    m.disableLighting = true;
-    accretionCache.set(scene, m);
-  }
-  return m;
+/** Emissive rim light: `edge` at grazing angles, `face` head-on. */
+function rim(edge: string, face: string, power: number): FresnelParameters {
+  return new FresnelParameters({ leftColor: Color3.FromHexString(edge), rightColor: Color3.FromHexString(face), bias: 0.1, power });
 }
 
 /** The mutation that decides how a fish looks: the rarest one it has. */
@@ -493,24 +493,12 @@ export function createFishModel(scene: Scene, speciesId: string, mutations: read
   tail.useVertexColors = keepPattern;
   const meshes: Mesh[] = [body, tail];
 
-  let ring: TransformNode | null = null;
-  if (finish === "blackHole") {
-    ring = new TransformNode("accretion", scene);
-    ring.parent = root;
-    const disc = CreateTorus("accretionRing", { diameter: 1.6, thickness: 0.05, tessellation: 24 }, scene);
-    disc.parent = ring;
-    disc.material = accretionMaterial(scene);
-    meshes.push(disc);
-    ring.rotation.x = 0.45;
-  }
-
   return {
     root,
     meshes,
     update(t, swim) {
       tailPivot.rotation.y = Math.sin(swim * 3) * 0.45;
       if (finish === "lava") material.emissiveColor.set(0.8 + Math.sin(t * 4) * 0.2, 0.28 + Math.sin(t * 4) * 0.08, 0.05);
-      if (ring) ring.rotation.y = t * 2.2;
     },
     dispose() {
       root.dispose(); // clones share geometry with the cached templates; materials are shared

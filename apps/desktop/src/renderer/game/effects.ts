@@ -17,11 +17,12 @@ import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import "@babylonjs/core/Layers/effectLayerSceneComponent";
 import type { Rarity } from "@saf/core";
 import type { Finish } from "./fishModels";
+import { createCosmic, type Cosmic } from "./cosmic";
 
 /**
  * Showpiece effects around a displayed fish, so rare catches feel grand: a glow layer on the fish
  * and its effects, a particle signature per mutation (gold glitter, diamond twinkles, lava embers
- * and smoke, neutron-star shockwaves, black-hole inspiral), god rays behind Legendary+ fish, and
+ * and smoke; neutron stars and black holes get the cosmic showpieces in cosmic.ts), god rays behind Legendary+ fish, and
  * for Mythic a halo, a beam of light from the sky and a purple-gold sky. Purely cosmetic; driven
  * by sine waves and particle emitters, never by game randomness.
  */
@@ -29,7 +30,8 @@ import type { Finish } from "./fishModels";
 export interface Aura {
   /** Meshes the glow layer should light up. */
   glowMeshes: AbstractMesh[];
-  update(timeSec: number): void;
+  /** `power` (0…1) scales the density mutations' cosmic effect; other effects ignore it. */
+  update(timeSec: number, power?: number): void;
   dispose(): void;
 }
 
@@ -243,6 +245,7 @@ export function createAura(scene: Scene, anchor: TransformNode, size: number, ra
   }
 
   // Mutation signatures.
+  let cosmic: Cosmic | null = null;
   const box = (ps: ParticleSystem, k = 0.55) => {
     ps.minEmitBox = new Vector3(-size * k, -size * k * 0.35, -size * k * 0.35);
     ps.maxEmitBox = new Vector3(size * k, size * k * 0.35, size * k * 0.35);
@@ -315,85 +318,11 @@ export function createAura(scene: Scene, anchor: TransformNode, size: number, ra
       systems.push(embers, smoke);
       break;
     }
-    case "neutronStar": {
-      const rings: Mesh[] = [];
-      const ringMat = additive(scene, "shockMat", "#BFD8FF");
-      disposables.push(ringMat);
-      const face = new TransformNode("shockFace", scene);
-      face.parent = root;
-      face.billboardMode = TransformNode.BILLBOARDMODE_ALL;
-      for (let i = 0; i < 3; i++) {
-        const r = CreateTorus("shock", { diameter: 1, thickness: 0.03, tessellation: 40 }, scene);
-        r.parent = face;
-        r.rotation.x = Math.PI / 2;
-        r.material = ringMat;
-        rings.push(r);
-        glowMeshes.push(r);
-      }
-      updates.push((t) => {
-        rings.forEach((r, i) => {
-          const phase = (t * 0.8 + i / 3) % 1;
-          r.scaling.setAll(size * (0.6 + phase * 3.2));
-          r.visibility = 1 - phase;
-        });
-      });
-      const sparks = particles(scene, "pulsarSparks", root, tx.star, 200);
-      box(sparks, 0.3);
-      sparks.color1 = new Color4(0.75, 0.88, 1, 1);
-      sparks.color2 = new Color4(1, 1, 1, 1);
-      sparks.colorDead = new Color4(0.5, 0.7, 1, 0);
-      sparks.minSize = size * 0.03;
-      sparks.maxSize = size * 0.08;
-      sparks.minLifeTime = 0.3;
-      sparks.maxLifeTime = 0.8;
-      sparks.emitRate = 80;
-      sparks.direction1 = new Vector3(-1, -1, -1).scale(size * 0.8);
-      sparks.direction2 = new Vector3(1, 1, 1).scale(size * 0.8);
-      systems.push(sparks);
-      disposables.push(face);
-      break;
-    }
+    case "neutronStar":
     case "blackHole": {
-      // Matter spiralling in: particles start on a wide ring and wind down to the centre.
-      const ps = particles(scene, "inspiral", root, tx.soft, 500);
-      ps.color1 = new Color4(0.75, 0.45, 1, 1);
-      ps.color2 = new Color4(1, 0.55, 0.85, 1);
-      ps.colorDead = new Color4(0.2, 0, 0.4, 0);
-      ps.minSize = size * 0.03;
-      ps.maxSize = size * 0.07;
-      ps.minLifeTime = 1.5;
-      ps.maxLifeTime = 2.5;
-      ps.emitRate = 180;
-      ps.startPositionFunction = (_world, pos, particle) => {
-        const a = (particle.id * 2.399) % (Math.PI * 2);
-        const r = size * (1.2 + ((particle.id * 0.618) % 1) * 0.6);
-        pos.set(Math.cos(a) * r, ((particle.id * 0.37) % 1 - 0.5) * size * 0.08, Math.sin(a) * r);
-        const p = anchor.getAbsolutePosition();
-        pos.addInPlace(p);
-      };
-      ps.updateFunction = (list) => {
-        const c = anchor.getAbsolutePosition();
-        for (let i = list.length - 1; i >= 0; i--) {
-          const p = list[i]!;
-          p.age += ps.getScene()!.getEngine().getDeltaTime() / 1000;
-          if (p.age >= p.lifeTime) {
-            ps.recycleParticle(p);
-            continue;
-          }
-          const dx = p.position.x - c.x;
-          const dz = p.position.z - c.z;
-          const r = Math.hypot(dx, dz);
-          const a = Math.atan2(dz, dx) + 0.05 + 0.02 / Math.max(0.2, r / size);
-          const nr = r * 0.985;
-          p.position.x = c.x + Math.cos(a) * nr;
-          p.position.z = c.z + Math.sin(a) * nr;
-          p.position.y += (c.y - p.position.y) * 0.03;
-          const life = p.age / p.lifeTime;
-          p.color.set(0.75 + life * 0.25, 0.45, 1, 1 - life);
-          p.size = (ps.minSize + ps.maxSize) * 0.5 * (1 - life * 0.6);
-        }
-      };
-      systems.push(ps);
+      // The density mutations get a full cosmic showpiece (see cosmic.ts).
+      cosmic = createCosmic(scene, anchor, size, finish);
+      glowMeshes.push(...cosmic.glowMeshes);
       break;
     }
     case "normal":
@@ -404,10 +333,12 @@ export function createAura(scene: Scene, anchor: TransformNode, size: number, ra
 
   return {
     glowMeshes,
-    update(t) {
+    update(t, power = 1) {
       for (const u of updates) u(t);
+      cosmic?.update(t, power);
     },
     dispose() {
+      cosmic?.dispose();
       for (const ps of systems) ps.dispose(false);
       for (const d of disposables) d.dispose();
       root.dispose(false, true);

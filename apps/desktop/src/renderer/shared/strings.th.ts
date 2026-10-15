@@ -37,6 +37,12 @@ export const th = {
   bigCatch: "ได้ปลายักษ์!",
   denseCatch: "ตัวจิ๋วแต่หนักจนท่าเรือพัง!",
   lengthAbout: (len: string) => `ยาวประมาณ ${len}`,
+  /** Big title while a density mutant's cosmic power is up. */
+  cosmicTitle: { neutronStar: "พลังดาวนิวตรอน!", blackHole: "หลุมดำเปิดออกแล้ว!" } as Record<string, string>,
+  denseFact: {
+    neutronStar: "หนาแน่นระดับดาวนิวตรอน: เนื้อแค่ช้อนชาเดียวหนักนับพันล้านตัน",
+    blackHole: "หนาแน่นระดับหลุมดำ: แรงดึงดูดมหาศาลจนแสงยังหนีไม่พ้น",
+  } as Record<string, string>,
   refs: {
     human: "คน",
     boat: "เรือ",
@@ -47,6 +53,8 @@ export const th = {
     everest: "เอเวอเรสต์",
     moon: "ดวงจันทร์",
     earth: "โลก",
+    tinyFish: "ตัวจริงยาวแค่ 2 ซม. ▼",
+    tinyFishZoom: "ภาพขยาย · ตัวจริงยาวแค่ 2 ซม.",
   } as Record<string, string>,
 
   settingsTitle: "ตั้งค่า Steal A Fish",

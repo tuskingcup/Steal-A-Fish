@@ -1,6 +1,6 @@
 import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
 import { fishLengthMeters } from "./reveal";
-import { isDense } from "./fishModels";
+import { finishFor, isDense } from "./fishModels";
 import { createPondScene } from "./scene";
 import { describeAction, fishName, formatClock, formatCoins, formatLength, formatWeight, rarityTh, th } from "../shared/strings.th";
 
@@ -174,14 +174,14 @@ function renderReveal(): void {
   const stage = pond.reveal.stageOf();
   if (stage !== lastStage) {
     // White flash on the cut to the stage and on the cut back.
-    if ((lastStage === "hook" && stage === "stage") || (lastStage !== null && stage === null)) {
+    if ((lastStage === "hook" && stage === "stage") || (lastStage === "stage" && stage === "drop") || (lastStage !== null && stage === null)) {
       flashEl.className = "";
       void flashEl.offsetWidth;
       flashEl.className = "go";
     }
     lastStage = stage;
   }
-  document.body.classList.toggle("revealing", stage === "stage" || stage === "info");
+  document.body.classList.toggle("revealing", stage === "stage" || stage === "drop" || stage === "info");
   const e = revealing;
   if (!e || !stage) {
     revealEl.className = "";
@@ -194,13 +194,25 @@ function renderReveal(): void {
     revealEl.innerHTML = `<div class="big">${esc(th.hooked)}</div><div class="who">@${esc(e.name)}</div>`;
     return;
   }
+  const finish = finishFor(e.fish.mutations);
+  if (dense && stage === "stage") {
+    // The cosmic showpiece: a big title, and the stage to itself.
+    revealEl.className = `cosmic r-${e.fish.rarity}`;
+    revealEl.innerHTML = `<div class="big">${esc(th.cosmicTitle[finish] ?? th.denseCatch)}</div><div class="who">@${esc(e.name)}</div>`;
+    return;
+  }
+  if (stage === "drop") {
+    revealEl.className = ""; // the label points at the tiny fish
+    return;
+  }
   revealEl.className = `${stage} r-${e.fish.rarity}`;
   revealEl.innerHTML =
     `<div class="who"><b>@${esc(e.name)}</b> ${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
     `<div class="len">${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
-    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>`;
+    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>` +
+    (dense && th.denseFact[finish] ? `<div class="fact">${esc(th.denseFact[finish]!)}</div>` : "");
 }
 setInterval(renderReveal, 100);
 

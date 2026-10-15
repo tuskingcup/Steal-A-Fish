@@ -62,7 +62,8 @@ export interface Reveal {
   /** Reference labels (keys into the Thai strings) in canvas CSS pixels. */
   labels(cssScale: number): RevealLabel[];
   /** Where the reveal timeline is, for the overlay. */
-  stageOf(): "hook" | "stage" | "info" | null;
+  /** `drop` (dense fish only): the effect has imploded and the tiny fish is about to fall. */
+  stageOf(): "hook" | "stage" | "drop" | "info" | null;
 }
 
 /** Real fish: length (m) ≈ 0.4 × kg^(1/3). */
@@ -76,8 +77,25 @@ const FLASH_AT = 1.3;
 const RISE_END = 3.2;
 const DOLLY_END = 6.4;
 const END = 8.2;
-const DENSE_IMPACT = 2.6;
-const DENSE_END = 6.6;
+// Dense fish: the cosmic power builds around the hovering speck, holds, implodes back into it;
+// then the tiny fish drops onto the dock and snaps it.
+const DENSE_BUILD_END = 3.0;
+const DENSE_HOLD_END = 6.2;
+const DENSE_IMPLODE_END = 6.6;
+const DENSE_FALL_AT = 7.6;
+const DENSE_IMPACT = 8.1;
+const DENSE_END = 11.6;
+const DENSE_HOVER_Y = 2.6;
+/** Size of the cosmic effect: in the reveal, and beside the owner in the summary exhibit. */
+const DENSE_AURA = 1.5;
+const EXHIBIT_DENSE_AURA = 1.5;
+/**
+ * A density mutant is shown enlarged while its power is up (the star of its own effect), and
+ * shrinks to a speck when the power implodes. In the summary it stays enlarged, labelled as such.
+ */
+const DENSE_HERO = 2.1;
+const DENSE_SPECK = 0.3;
+const EXHIBIT_DENSE_HERO = 2.0;
 
 /** The bigger of the fish and a person is this long on the stage, in scene units. */
 const FISH_UNITS = 4;
@@ -273,6 +291,9 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
   let dock: ReturnType<typeof buildDock> | null = null;
   let catcher: FisherSprite | null = null;
   let dense = false;
+  /** The fish on display is a density mutant (its cosmic effect replaces the size story). */
+  let denseShown = false;
+  let auraPower = 1;
   let stopSplash: (() => void) | null = null;
   let splashed = false;
   let savedFog = { start: 0, end: 0 };
@@ -300,23 +321,29 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     fishModel = createFishModel(scene, f.speciesId, f.mutations);
     fishModel.root.parent = stage;
 
+    denseShown = isDense(f.mutations);
     if (revealMode && dense) {
       dock = buildDock();
       catcher = createFisherSprite(scene, avatarFor(req.userId), "stand", new Vector3(), 0);
-      fishModel.root.scaling.setAll(0.3);
-      fishUnits = 0.3;
-      attachEffects(f);
+      fishModel.root.scaling.setAll(DENSE_SPECK);
+      fishUnits = DENSE_SPECK;
+      auraPower = 0;
+      attachEffects(f, DENSE_AURA);
       return;
     }
+    auraPower = 1;
 
     // Units per metre: the bigger of the fish and a person fills FISH_UNITS, so small fish look small.
     const length = fishLengthMeters(f.weightLog10, f.mutations);
     const k = FISH_UNITS / Math.max(length, HUMAN_M);
-    fishUnits = Math.max(length * k, 0.12); // dense fish stay visible as a glowing speck
+    // A density mutant (2 cm) is shown enlarged, with a label saying so.
+    fishUnits = denseShown ? EXHIBIT_DENSE_HERO : length * k;
     // The owner always stands beside their fish; other references only when they help.
     const others = REFERENCES.filter((r) => r.key !== "human" && r.size >= length / 60 && r.size <= length * 2.5);
     const chosen = [REFERENCES[0], ...others];
-    let x = fishUnits * 0.6 + 0.15;
+    // Dense fish are specks, but their cosmic effect needs room before the owner stands.
+    const reach = denseShown ? EXHIBIT_DENSE_AURA * 1.9 : fishUnits * 0.6;
+    let x = reach + 0.15;
     let tallest = Math.max(fishUnits * 1.2, HUMAN_M * k);
     const humanH = HUMAN_M * k;
     refs = chosen.map((r, i) => {
@@ -341,25 +368,27 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     });
     // Small fish are held up at chest height beside the owner; big ones hang above the water.
     fishHover = fishUnits < humanH ? new Vector3(0, humanH * 0.62, 0) : new Vector3(0, fishUnits * 0.7, 0);
-    const left = -fishUnits * 0.6 - 0.15;
+    const left = -reach - 0.15;
     const width = x - left;
     const centerX = (left + x) / 2;
     const horizontalPerUnit = 2 * Math.tan(camera.fov / 2) * (9 / 16);
     farRadius = Math.max((width * 1.3) / horizontalPerUnit, (tallest * 1.6) / (2 * Math.tan(camera.fov / 2)), 3);
+    if (denseShown) farRadius *= 0.85; // the cosmic effect may spill past the frame; keep the fish big
     farTarget = new Vector3(centerX, Math.max(tallest, fishHover.y + fishUnits * 0.3) * 0.5, 0);
     closeRadius = Math.max(fishUnits * 1.9, 1.2);
-    attachEffects(f);
+    attachEffects(f, EXHIBIT_DENSE_AURA);
   };
 
-  const attachEffects = (f: RevealFish): void => {
+  /** `denseSize`: the cosmic effect's size for density mutants (they are specks at true scale). */
+  const attachEffects = (f: RevealFish, denseSize: number): void => {
     if (!fishModel) return;
     const finish = finishFor(f.mutations);
-    // Dense fish are specks at true scale: their aura is sized to be seen beside the owner.
-    const auraSize = finish === "blackHole" || finish === "neutronStar" ? Math.max(fishUnits, 1.4) : fishUnits;
+    const auraSize = isDense(f.mutations) ? denseSize : fishUnits;
     aura = createAura(scene, fishAnchor, auraSize, f.rarity, finish);
     // Only self-lit finishes glow as a whole; on metal or scales the glow would wash out the detail
     // (and the naga's heads, crowns and crest are too detailed to glow at all).
-    const selfLit = (finish === "lava" || finish === "neutronStar" || finish === "blackHole") && f.speciesId !== "nagaFish";
+    // Density mutants have their own rim light instead.
+    const selfLit = finish === "lava" && f.speciesId !== "nagaFish";
     const lit = [...(selfLit ? fishModel.meshes : []), ...aura.glowMeshes];
     for (const m of lit) glow.addIncludedOnlyMesh(m as Mesh);
     glow.isEnabled = lit.length > 0;
@@ -452,14 +481,19 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     if (!fishModel) return;
     fishModel.update(time, time * 6);
     fishAnchor.position.copyFrom(fishModel.root.position);
-    aura?.update(time);
+    aura?.update(time, auraPower);
   };
 
   return {
     active: () => playing,
     ownsCamera: () => onStage,
     exhibiting: () => exhibitOn,
-    stageOf: () => (!playing ? null : t < FLASH_AT ? "hook" : t < (dense ? DENSE_IMPACT : DOLLY_END) ? "stage" : "info"),
+    stageOf: () =>
+      !playing ? null
+      : t < FLASH_AT ? "hook"
+      : dense ? (t < DENSE_IMPLODE_END ? "stage" : t < DENSE_IMPACT ? "drop" : "info")
+      : t < DOLLY_END ? "stage"
+      : "info",
 
     play(req, hookOn, onDone) {
       if (exhibitOn) return; // the summary has the stage
@@ -529,13 +563,23 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
       const time = t;
 
       if (dense) {
-        // A tiny glowing fish drops onto the dock… and the dock snaps.
-        const fall = Math.min(1, Math.max(0, (t - FLASH_AT - 0.3) / (DENSE_IMPACT - FLASH_AT - 0.3)));
+        // The cosmic power builds around the hovering speck, holds, and implodes back into it…
+        // then the tiny fish drops onto the dock, and the dock snaps.
+        const since = t - FLASH_AT;
+        auraPower =
+          t < DENSE_BUILD_END ? ease(since / (DENSE_BUILD_END - FLASH_AT))
+          : t < DENSE_HOLD_END ? 1
+          : 1 - ease((t - DENSE_HOLD_END) / (DENSE_IMPLODE_END - DENSE_HOLD_END));
         const broke = t >= DENSE_IMPACT;
         const after = t - DENSE_IMPACT;
-        const fishY = broke ? Math.max(-0.5, 0.95 - after * after * 6) : 4 - 3.05 * fall * fall;
+        const fall = ease((t - DENSE_FALL_AT) / (DENSE_IMPACT - DENSE_FALL_AT));
+        const hover = DENSE_HOVER_Y + Math.sin(time * 2) * 0.05;
+        const fishY = broke ? Math.max(-0.5, 0.95 - after * after * 6) : hover - (hover - 0.95) * fall * fall;
         fishModel.root.position.set(0, fishY, 0.1);
-        fishModel.root.rotation.y = Math.PI + time * 3;
+        // The fish is the star of its own effect, then shrinks back to what it really is.
+        fishModel.root.scaling.setAll(DENSE_SPECK + (DENSE_HERO - DENSE_SPECK) * auraPower);
+        fishModel.root.rotation.y = Math.PI + Math.sin(time * 0.9) * 0.45;
+        fishModel.root.rotation.z = Math.sin(time * 1.4) * 0.08;
         animateFish(time);
         if (dock) {
           const snap = broke ? Math.min(1, after * 2.5) : 0;
@@ -551,11 +595,29 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
           splashed = true;
           stopSplash = splashBurst(scene, world(new Vector3(0, 0, 0.1)), 1.2);
         }
-        const shake = broke && after < 0.7 ? (0.7 - after) * 0.06 : 0;
-        camera.target.copyFrom(world(new Vector3(0.3, 1.2, 0)));
-        camera.alpha = Math.PI / 2 + 0.35 + Math.sin(time * 61) * shake;
-        camera.beta = 1.32 + Math.sin(time * 47 + 1) * shake;
-        camera.radius = 6.5 - ease((t - FLASH_AT) / 1.5) * 1;
+
+        const fishAt = world(new Vector3(0, fishY, 0.1));
+        const dockAt = world(new Vector3(0.3, 1.2, 0));
+        let shake = 0;
+        if (t < DENSE_IMPLODE_END) {
+          // From a macro shot of the speck, pull back as the power grows to take it all in.
+          const grow = Math.min(auraPower, ease(since / (DENSE_BUILD_END + 1 - FLASH_AT)));
+          camera.target.copyFrom(fishAt);
+          camera.radius = 2 + (DENSE_AURA * 7 - 2) * grow;
+          camera.alpha = Math.PI / 2 + 0.25 + since * 0.1;
+          camera.beta = 1.4 - 0.1 * grow;
+          shake = auraPower * 0.01;
+        } else {
+          // Imploded: a close look at what is left — a 2 cm fish — then follow it down to the dock.
+          const k = ease((t - DENSE_FALL_AT) / (DENSE_IMPACT - DENSE_FALL_AT + 0.3));
+          Vector3.LerpToRef(fishAt, dockAt, k, camera.target);
+          camera.radius = 1.6 + (5.5 - 1.6) * k;
+          camera.alpha = Math.PI / 2 + 0.35;
+          camera.beta = 1.36 - 0.04 * k;
+          if (broke && after < 0.7) shake = (0.7 - after) * 0.06;
+        }
+        camera.alpha += Math.sin(time * 61) * shake;
+        camera.beta += Math.sin(time * 47 + 1) * shake;
         return;
       }
 
@@ -589,17 +651,29 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     },
 
     labels(cssScale) {
-      if (!onStage || (playing && dense)) return [];
+      if (!onStage) return [];
       const engine = scene.getEngine();
       const w = engine.getRenderWidth();
       const h = engine.getRenderHeight();
       const viewport = camera.viewport.toGlobal(w, h);
       const transform = scene.getTransformMatrix();
-      return refs.map((r) => {
-        const top = r.key === "human" ? r.height * 1.12 : r.height;
-        const p = Vector3.Project(world(r.node.position).add(new Vector3(0, top * r.scale + 0.05, 0)), Matrix.IdentityReadOnly, transform, viewport);
-        return { key: r.key, x: p.x * cssScale, y: p.y * cssScale, visible: r.scale > 0.6 && p.z > 0 && p.z < 1 };
-      });
+      const label = (key: string, at: Vector3, visible: boolean): RevealLabel => {
+        const p = Vector3.Project(at, Matrix.IdentityReadOnly, transform, viewport);
+        return { key, x: p.x * cssScale, y: p.y * cssScale, visible: visible && p.z > 0 && p.z < 1 };
+      };
+      // A density mutant is a speck: point at it, so viewers know what they are looking at.
+      const tiny =
+        denseShown && fishModel
+          ? [
+              label(
+                playing ? "tinyFish" : "tinyFishZoom",
+                world(fishModel.root.position).add(new Vector3(0, fishModel.root.scaling.y * 0.35 + 0.08, 0)),
+                !playing || t < DENSE_FALL_AT + 0.2,
+              ),
+            ]
+          : [];
+      if (playing && dense) return t >= DENSE_IMPLODE_END ? tiny : [];
+      return [...refs.map((r) => label(r.key, world(r.node.position).add(new Vector3(0, (r.key === "human" ? r.height * 1.12 : r.height) * r.scale + 0.05, 0)), r.scale > 0.6)), ...tiny];
     },
   };
 }
