@@ -33,6 +33,8 @@ interface OverlayData {
 /** Rows shown before the list scrolls. */
 const VISIBLE_ROWS = 10;
 const PORTS = [37821, 37822, 37823, 37824, 37825];
+/** The page answers on all of these (older links keep working). */
+const PAGE_PATHS = new Set(["/", "/index.html", "/leaderboard", "/leaderboard/", "/leaderboard/index.html", "/leaderboard.html"]);
 
 function data(snap: OverlaySnapshot): OverlayData {
   const { state, standings } = snap;
@@ -156,24 +158,39 @@ setInterval(() => {
 /** Serve the overlay on the first free local port; resolves to its URL (or null if none was free). */
 export function startOverlay(snapshot: () => OverlaySnapshot): Promise<{ url: string | null; close: () => void }> {
   const handler: Parameters<typeof createServer>[1] = (req, res) => {
-    const path = (req.url ?? "/").split("?")[0];
-    if (path === "/leaderboard.json") {
+    const path = (req.url ?? "/").split("?")[0] ?? "/";
+    if (path === "/leaderboard.json" || path === "/leaderboard/leaderboard.json") {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       res.end(JSON.stringify(data(snapshot())));
-    } else if (path === "/" || path === "/leaderboard") {
+    } else if (PAGE_PATHS.has(path)) {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
       res.end(PAGE);
     } else {
       res.writeHead(404).end();
     }
   };
-  const tryPort = (i: number): Promise<{ url: string | null; close: () => void }> =>
+  /** Listen on one local address; resolves to the server, or null if the port is taken there. */
+  const listen = (port: number, host: string): Promise<Server | null> =>
     new Promise((resolve) => {
-      if (i >= PORTS.length) return resolve({ url: null, close: () => {} });
-      const server: Server = createServer(handler);
-      server.once("error", () => resolve(tryPort(i + 1)));
-      // This computer only: TikTok LIVE Studio and OBS run here, nobody else needs it.
-      server.listen(PORTS[i], "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${PORTS[i]}/leaderboard`, close: () => server.close() }));
+      const server = createServer(handler);
+      server.once("error", () => resolve(null));
+      server.listen(port, host, () => resolve(server));
     });
+  const tryPort = async (i: number): Promise<{ url: string | null; close: () => void }> => {
+    if (i >= PORTS.length) return { url: null, close: () => {} };
+    const port = PORTS[i]!;
+    // This computer only: TikTok LIVE Studio and OBS run here, nobody else needs it.
+    const v4 = await listen(port, "127.0.0.1");
+    if (!v4) return tryPort(i + 1);
+    // "localhost" may resolve to IPv6 first (Windows, newer Node), so answer there too when we can.
+    const v6 = await listen(port, "::1");
+    return {
+      url: `http://localhost:${port}/leaderboard/index.html`,
+      close: () => {
+        v4.close();
+        v6?.close();
+      },
+    };
+  };
   return tryPort(0);
 }
