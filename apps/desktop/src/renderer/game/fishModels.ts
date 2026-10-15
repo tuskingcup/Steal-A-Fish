@@ -521,6 +521,7 @@ export function createFishModel(scene: Scene, speciesId: string, mutations: read
 // ---------- พญานาค: a three-headed Thai naga ----------
 
 const NAGA_POINTS = 44;
+const UP = new Vector3(0, 1, 0);
 type NagaMats = Record<"scales" | "headScales" | "gold" | "flame" | "mouth" | "fang" | "eye" | "pupil", StandardMaterial>;
 const nagaMats = new WeakMap<Scene, NagaMats>();
 
@@ -661,6 +662,7 @@ function createNaga(scene: Scene, finish: Finish): FishModel {
   }
 
   const tangent = new Vector3();
+  const normal = new Vector3();
   return {
     root,
     meshes,
@@ -673,10 +675,15 @@ function createNaga(scene: Scene, finish: Finish): FishModel {
         const p = path[i]!;
         const r = nagaRadius(i);
         const size = r * (1.6 + Math.sin(t * 9 + k) * 0.25);
-        f.position.set(p.x, p.y + r + size * 0.4, p.z);
+        // Stand on the back of the body (perpendicular to it, even where it rears up), leaning back.
+        path[i + 1]!.subtractToRef(path[i - 1]!, tangent).normalize();
+        UP.subtractToRef(tangent.scale(Vector3.Dot(UP, tangent)), normal).normalize();
+        const lean = 0.45;
+        const along = normal.scale(Math.cos(lean)).subtract(tangent.scale(Math.sin(lean)));
+        orient(f, tangent.scale(Math.cos(lean)).add(normal.scale(Math.sin(lean))), along);
+        // The cone's base sits inside the body surface.
+        f.position.copyFrom(p).addInPlace(normal.scale(r * 0.75)).addInPlace(along.scale(size / 2));
         f.scaling.set(size * 1.4, size, size * 1.4 * 0.25);
-        path[i + 1]!.subtractToRef(path[i - 1]!, tangent);
-        f.rotation.set(0, Math.atan2(-tangent.z, tangent.x), -0.5 + Math.atan2(tangent.y, Math.hypot(tangent.x, tangent.z)));
       });
       const neck = path[NAGA_POINTS - 1]!;
       headRoot.position.copyFrom(neck);
@@ -752,6 +759,46 @@ function whisker(scene: Scene, side: number): Mesh {
   return CreateTube("whisker", { path, radiusFunction: (i) => 0.0034 * (1 - (i / 14) * 0.75), tessellation: 5, cap: Mesh.CAP_ALL }, scene);
 }
 
+/** Naga skull half-extents (before shaping) and the lower jaw's, in head units. */
+const SKULL = { x: 0.065, y: 0.03, z: 0.035 };
+const JAW = { x: 0.044, y: 0.011, z: 0.024, cx: 0.044, cy: -0.004 };
+
+const skullU = (x: number) => (x + SKULL.x) / (SKULL.x * 2); // 0 back … 1 nose
+/** Narrowing towards the snout. */
+const skullTaper = (x: number) => 1 - 0.5 * smooth(0.4, 1, skullU(x));
+/** Height of a skull vertex after shaping (`z` is already tapered). */
+function skullShapeY(x: number, y: number, z: number): number {
+  const u = skullU(x);
+  if (y > 0) {
+    y *= 0.8 - 0.35 * smooth(0.5, 1, u);
+    y += 0.014 * Math.exp(-Math.pow((u - 0.42) / 0.12, 2)) * smooth(0.01, 0.03, Math.abs(z)); // brow ridges
+  } else {
+    y *= 0.55;
+  }
+  return y + 0.03 * smooth(0.82, 1, u) * smooth(0.82, 1, u); // upturned nose
+}
+const skullHalfWidth = (x: number) => SKULL.z * Math.sqrt(Math.max(0, 1 - (x / SKULL.x) ** 2)) * skullTaper(x);
+/** The skull's top (or underside) surface at (x, z), exactly as the mesh is shaped. */
+function skullSurfaceY(x: number, z: number, top: boolean): number {
+  const z0 = z / skullTaper(x);
+  const r = SKULL.y * Math.sqrt(Math.max(0, 1 - (x / SKULL.x) ** 2 - (z0 / SKULL.z) ** 2));
+  return skullShapeY(x, top ? r : -r, z);
+}
+const jawTaper = (localX: number) => 1 - 0.45 * smooth(-0.02, 0.05, localX);
+const jawHalfWidth = (x: number) => JAW.z * Math.sqrt(Math.max(0, 1 - ((x - JAW.cx) / JAW.x) ** 2)) * jawTaper(x - JAW.cx);
+/** Top of the lower jaw at (x, z), in hinge space. */
+function jawTop(x: number, z: number): number {
+  const lx = x - JAW.cx;
+  const z0 = z / jawTaper(lx);
+  return JAW.cy + JAW.y * Math.sqrt(Math.max(0, 1 - (lx / JAW.x) ** 2 - (z0 / JAW.z) ** 2));
+}
+
+/** Place a cone (tip along local +y) so its base sits at `base`, tipped by `roll` around z. */
+function seat(cone: Mesh, base: Vector3, roll: number, len: number): void {
+  cone.rotation.z = roll;
+  cone.position = base.add(new Vector3(-Math.sin(roll), Math.cos(roll), 0).scale(len / 2));
+}
+
 /**
  * One naga head, about 0.13 long, facing +x: a sculpted skull with heavy brows, an upturned snout
  * and an open jaw full of fangs, glowing slit eyes, flame brows, curling whiskers, a hood of flame
@@ -759,91 +806,88 @@ function whisker(scene: Scene, side: number): Mesh {
  */
 function buildNagaHead(scene: Scene, head: TransformNode, mats: NagaMats, skin: StandardMaterial, add: (m: Mesh, mat: StandardMaterial) => Mesh): TransformNode {
   // Skull: a sphere pushed into a wedge — wide brows, narrow snout, nose tip curling up.
-  const skull = CreateSphere("skull", { segments: 10, diameterX: 0.13, diameterY: 0.06, diameterZ: 0.07 }, scene);
+  const skull = CreateSphere("skull", { segments: 10, diameterX: SKULL.x * 2, diameterY: SKULL.y * 2, diameterZ: SKULL.z * 2 }, scene);
   const pos = skull.getVerticesData(VertexBuffer.PositionKind)!;
   for (let i = 0; i < pos.length; i += 3) {
     const x = pos[i]!;
-    let y = pos[i + 1]!;
-    let z = pos[i + 2]!;
-    const u = (x + 0.065) / 0.13; // 0 back … 1 nose
-    z *= 1 - 0.5 * smooth(0.4, 1, u);
-    if (y > 0) {
-      y *= 0.8 - 0.35 * smooth(0.5, 1, u);
-      // Brow ridges over the eyes.
-      y += 0.014 * Math.exp(-Math.pow((u - 0.42) / 0.12, 2)) * smooth(0.01, 0.03, Math.abs(z));
-    } else {
-      y *= 0.55;
-    }
-    y += 0.03 * smooth(0.82, 1, u) * smooth(0.82, 1, u); // upturned nose
-    pos[i + 1] = y;
+    const z = pos[i + 2]! * skullTaper(x);
+    pos[i + 1] = skullShapeY(x, pos[i + 1]!, z);
     pos[i + 2] = z;
   }
   skull.setVerticesData(VertexBuffer.PositionKind, pos);
   skull.convertToFlatShadedMesh();
   add(skull, skin);
+  // Roof of the mouth: a shrunken copy of the skull whose underside shows just below it, red.
+  const palate = add(skull.clone("palate"), mats.mouth);
+  palate.scaling.set(0.8, 0.5, 0.8);
+  palate.position.set(-0.003, -0.0095, 0);
 
-  // Lower jaw on a hinge at the back of the mouth.
+  // Lower jaw on a hinge under the back of the skull; it ends behind the snout tip.
   const hinge = new TransformNode("jawHinge", scene);
   hinge.parent = head;
   hinge.position.set(-0.03, -0.012, 0);
   hinge.rotation.z = -0.35;
-  const jaw = CreateSphere("jaw", { segments: 8, diameterX: 0.105, diameterY: 0.022, diameterZ: 0.048 }, scene);
+  const jaw = CreateSphere("jaw", { segments: 8, diameterX: JAW.x * 2, diameterY: JAW.y * 2, diameterZ: JAW.z * 2 }, scene);
   const jp = jaw.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < jp.length; i += 3) jp[i + 2] = jp[i + 2]! * (1 - 0.45 * smooth(-0.02, 0.05, jp[i]!));
+  for (let i = 0; i < jp.length; i += 3) jp[i + 2] = jp[i + 2]! * jawTaper(jp[i]!);
   jaw.setVerticesData(VertexBuffer.PositionKind, jp);
   jaw.convertToFlatShadedMesh();
   add(jaw, skin).parent = hinge;
-  jaw.position.set(0.05, -0.004, 0);
-  const tongueBed = add(CreateSphere("mouth", { segments: 6, diameterX: 0.09, diameterY: 0.012, diameterZ: 0.036 }, scene), mats.mouth);
+  jaw.position.set(JAW.cx, JAW.cy, 0);
+  // Inside of the mouth: a flatter copy of the jaw whose top shows red within the jaw's rim.
+  const tongueBed = add(jaw.clone("mouth"), mats.mouth);
   tongueBed.parent = hinge;
-  tongueBed.position.set(0.045, 0.006, 0);
-  // Forked tongue.
-  const tongue = add(CreateBox("tongue", { width: 0.04, height: 0.0025, depth: 0.004 }, scene), mats.mouth);
+  tongueBed.scaling.set(0.88, 0.6, 0.78);
+  tongueBed.position.set(JAW.cx + 0.002, JAW.cy + 0.006, 0);
+  // Forked tongue lying in the jaw, the fork just past its tip.
+  const tongue = add(CreateBox("tongue", { width: 0.05, height: 0.0025, depth: 0.004 }, scene), mats.mouth);
   tongue.parent = hinge;
-  tongue.position.set(0.075, 0.008, 0);
-  tongue.rotation.z = 0.2;
+  tongue.position.set(JAW.cx + 0.01, jawTop(JAW.cx + 0.01, 0) + 0.001, 0);
+  tongue.rotation.z = 0.08;
   for (const z of [-1, 1]) {
     const prong = add(CreateBox("tongueFork", { width: 0.014, height: 0.002, depth: 0.0025 }, scene), mats.mouth);
     prong.parent = hinge;
-    prong.position.set(0.099, 0.013, z * 0.004);
-    prong.rotation.set(0, z * 0.55, 0.2);
+    prong.position.set(JAW.cx + 0.04, tongue.position.y + 0.003, z * 0.004);
+    prong.rotation.set(0, z * 0.55, 0.08);
   }
-  // Roof of the mouth, so the open jaw shows red, not the inside of the skull.
-  const palate = add(CreateSphere("palate", { segments: 6, diameterX: 0.09, diameterY: 0.01, diameterZ: 0.034 }, scene), mats.mouth);
-  palate.position.set(0.02, -0.014, 0);
 
   for (const side of [-1, 1]) {
-    // Fangs: long curved upper ones near the front, small lower ones on the jaw.
-    for (const [x, len] of [[0.045, 0.034], [0.02, 0.018]] as const) {
+    // Upper fangs rooted in the skull's underside, curving down and forward.
+    for (const [x, len] of [[0.042, 0.032], [0.018, 0.018]] as const) {
+      const z = side * skullHalfWidth(x) * 0.6;
       const fang = add(CreateCylinder("fang", { height: len, diameterTop: 0, diameterBottom: 0.009, tessellation: 5 }, scene), mats.fang);
-      fang.position.set(x, -0.016 - len * 0.4, side * 0.013);
-      fang.rotation.set(side * 0.12, 0, Math.PI + 0.25);
+      seat(fang, new Vector3(x, skullSurfaceY(x, z, false) + 0.004, z), Math.PI + 0.25, len);
     }
+    // Lower fangs rooted in the jaw, pointing up.
+    const lx = JAW.cx + 0.022;
+    const lz = side * jawHalfWidth(lx) * 0.6;
     const low = add(CreateCylinder("fangLow", { height: 0.016, diameterTop: 0, diameterBottom: 0.007, tessellation: 5 }, scene), mats.fang);
     low.parent = hinge;
-    low.position.set(0.075, 0.01, side * 0.011);
-    low.rotation.z = -0.2;
+    seat(low, new Vector3(lx, jawTop(lx, lz) - 0.003, lz), -0.2, 0.016);
 
-    // Glowing eye under the brow, a black slit pupil, angled forward.
+    // Glowing eye set into the side of the head under the brow, a black slit pupil.
+    const ex = 0.012;
+    const ez = side * skullHalfWidth(ex) * 0.8;
     const eye = add(CreateSphere("eye", { segments: 6, diameterX: 0.022, diameterY: 0.013, diameterZ: 0.01 }, scene), mats.eye);
-    eye.position.set(0.012, 0.012, side * 0.024);
+    eye.position.set(ex, 0.011, ez);
     eye.rotation.set(0, side * 0.45, side * -0.15);
     const slit = add(CreateBox("pupil", { width: 0.003, height: 0.012, depth: 0.004 }, scene), mats.pupil);
-    slit.position.set(0.014, 0.012, side * 0.0285);
+    slit.position.set(ex + 0.002, 0.011, ez + side * 0.0045);
     slit.rotation.y = side * 0.45;
 
-    // Flame brows sweeping back from above each eye.
-    const brow = add(flameBlade(scene, 0.07, 0.016, 1.3), mats.gold);
-    brow.position.set(0.022, 0.02, side * 0.022);
-    orient(brow, new Vector3(-1, 0.45, side * 0.55), new Vector3(0, 1, 0));
+    // Flame brows rooted on the brow ridge, hugging the head as they sweep back.
+    const bz = side * 0.014;
+    const brow = add(flameBlade(scene, 0.062, 0.015, 1.2), mats.gold);
+    brow.position.set(0.02, skullSurfaceY(0.02, bz, true) - 0.003, bz);
+    orient(brow, new Vector3(-1, 0.28, side * 0.42), new Vector3(0, 1, 0));
 
     // Whiskers from the corners of the snout.
     const w = add(whisker(scene, side), mats.gold);
-    w.position.set(0.05, -0.002, side * 0.014);
+    w.position.set(0.05, -0.002, side * skullHalfWidth(0.05) * 0.75);
 
-    // Cheek flames fanning back below the eye.
+    // Cheek flames fanning back from below the eye.
     const cheek = add(flameBlade(scene, 0.05, 0.014, -1.1), mats.flame);
-    cheek.position.set(-0.01, -0.008, side * 0.024);
+    cheek.position.set(-0.01, -0.005, side * skullHalfWidth(-0.01) * 0.8);
     orient(cheek, new Vector3(-1, -0.35, side * 0.7), new Vector3(0, -1, 0));
   }
 
@@ -861,7 +905,8 @@ function buildNagaHead(scene: Scene, head: TransformNode, mats: NagaMats, skin: 
   }
 
   // Tiered Thai crown (ชฎา): stacked rings narrowing to a slim spire with a red jewel.
-  let y = 0.026;
+  const crownBase = skullSurfaceY(-0.012, 0, true) - 0.003;
+  let y = crownBase;
   for (let tier = 0; tier < 4; tier++) {
     const d = 0.028 - tier * 0.005;
     const ring = add(CreateCylinder("crownTier", { height: 0.008, diameterTop: d * 0.8, diameterBottom: d, tessellation: 10 }, scene), mats.gold);
@@ -871,6 +916,6 @@ function buildNagaHead(scene: Scene, head: TransformNode, mats: NagaMats, skin: 
   const spire = add(CreateCylinder("crownSpire", { height: 0.034, diameterTop: 0, diameterBottom: 0.009, tessellation: 8 }, scene), mats.gold);
   spire.position.set(-0.012, y + 0.017, 0);
   const jewel = add(CreateIcoSphere("crownJewel", { radius: 0.0055, subdivisions: 1 }, scene), mats.flame);
-  jewel.position.set(-0.012, 0.031, 0.017);
+  jewel.position.set(-0.012, crownBase + 0.006, 0.0125);
   return hinge;
 }
