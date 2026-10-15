@@ -19,6 +19,12 @@ describe("SimulatedLiveSource", () => {
     expect(g?.type === "gift" && g.repeatCount).toBe(3);
   });
 
+  it("makes new viewers with unique ids", () => {
+    const source = new SimulatedLiveSource();
+    const ids = Array.from({ length: 30 }, () => source.newViewer().userId);
+    expect(new Set(ids).size).toBe(30);
+  });
+
   it("reports connection state", async () => {
     const source = new SimulatedLiveSource();
     const states: string[] = [];

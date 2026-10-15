@@ -14,6 +14,8 @@ const SAMPLE_VIEWERS: Viewer[] = [
   { userId: "sim-10", uniqueId: "lung_dam", nickname: "ลุงดำ" },
 ];
 
+const CROWD_NAMES = ["น้องฟ้า", "Toey", "แม่ค้าส้มตำ", "Ice", "พี่หมี", "Bank", "ยายจันทร์", "Nut", "เจ๊ติ๋ม", "Gun", "น้ำหวาน", "Beam"];
+
 /**
  * Fake live source for development and for the "test" buttons in settings.
  * Lets the whole game run without going live.
@@ -21,6 +23,7 @@ const SAMPLE_VIEWERS: Viewer[] = [
 export class SimulatedLiveSource extends BaseLiveSource {
   readonly kind = "simulator";
   private seq = 0;
+  private crowd = 0;
 
   async connect(): Promise<void> {
     this.setState({ status: "connected", roomId: "simulator" });
@@ -53,6 +56,13 @@ export class SimulatedLiveSource extends BaseLiveSource {
 
   sendFollow(viewer?: Viewer): void {
     this.emit({ type: "follow", eventId: this.nextId(), at: Date.now(), viewer: viewer ?? this.randomViewer() });
+  }
+
+  /** A viewer who hasn't appeared before, for testing a full dock and beach. */
+  newViewer(): Viewer {
+    const n = ++this.crowd;
+    const name = `${CROWD_NAMES[(n - 1) % CROWD_NAMES.length]}${n > CROWD_NAMES.length ? ` ${Math.ceil(n / CROWD_NAMES.length)}` : ""}`;
+    return { userId: `sim-crowd-${n}`, uniqueId: `crowd_${n}`, nickname: name };
   }
 
   private nextId(): string {

@@ -16,6 +16,7 @@ const api: SafApi = {
   simulateLikes: (count) => ipcRenderer.invoke(IPC.simLikes, count),
   simulateComment: (text) => ipcRenderer.invoke(IPC.simComment, text),
   simulateFollow: () => ipcRenderer.invoke(IPC.simFollow),
+  simulateCrowd: (count) => ipcRenderer.invoke(IPC.simCrowd, count),
   onLiveState: (listener) => subscribe(IPC.liveState, listener),
   onGameAction: (listener) => subscribe(IPC.gameAction, listener),
   onPodium: (listener) => subscribe(IPC.gamePodium, listener),

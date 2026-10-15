@@ -12,6 +12,7 @@ export const IPC = {
   simLikes: "sim:likes",
   simComment: "sim:comment",
   simFollow: "sim:follow",
+  simCrowd: "sim:crowd",
   gameAction: "game:action",
   gamePodium: "game:podium",
   logEntry: "log:entry",
@@ -53,6 +54,8 @@ export interface SafApi {
   simulateLikes(count: number): Promise<void>;
   simulateComment(text: string): Promise<void>;
   simulateFollow(): Promise<void>;
+  /** `count` brand-new viewers each send a rose. */
+  simulateCrowd(count: number): Promise<void>;
   onLiveState(listener: (state: ConnectionState) => void): () => void;
   onGameAction(listener: (action: FiredAction) => void): () => void;
   onPodium(listener: (podium: RankedPlayer[]) => void): () => void;

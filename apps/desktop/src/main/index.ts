@@ -139,6 +139,11 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.simLikes, (_e, count: number) => simulator.sendLikes(count));
   ipcMain.handle(IPC.simComment, (_e, text: string) => simulator.sendComment(text));
   ipcMain.handle(IPC.simFollow, () => simulator.sendFollow());
+  ipcMain.handle(IPC.simCrowd, (_e, count: number) => {
+    for (let i = 0; i < Math.min(count, 50); i++) {
+      simulator.sendGift({ giftId: 5655, giftName: "Rose", diamonds: 1, viewer: simulator.newViewer() });
+    }
+  });
 
   // 540×960 is a quarter of the 1080×1920 portrait stream frame; OBS scales it up.
   gameWindow = createWindow("game", { width: 540, height: 960, title: "Steal A Fish — Game", backgroundColor: "#0C2B40" });
