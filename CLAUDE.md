@@ -1,0 +1,112 @@
+# CLAUDE.md — Steal A Fish
+
+## Project
+
+Steal A Fish is a **desktop game for TikTok Live streamers**. Viewers drive the game with gifts, likes, comments, follows and shares. The streamer runs the app and captures the game window into OBS.
+
+Core idea: an idle/gacha fishing game with a "Steal an Egg"–style feel. Viewers cast lines with gifts and catch fish with absurd weights (millions to trillions of kg and beyond), collect them into a personal tank that generates coins, and steal fish from each other.
+
+Status: early planning. No code yet. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
+
+## Language
+
+- All player-facing text (overlay, settings UI) is **Thai**. Keep strings in one i18n file, not scattered in code.
+- Code, identifiers, commit messages and code comments are **English**.
+
+## Stack
+
+| Part | Choice |
+|---|---|
+| Desktop shell | Electron — a **game window** and a separate **settings window** |
+| Game renderer | Babylon.js + TypeScript + Vite |
+| In-game UI (result cards, leaderboard) | HTML/CSS layered over the Babylon canvas (crisper Thai text than Babylon GUI) |
+| Settings UI | React |
+| TikTok Live events | `tiktok-live-connector` (Node, runs in Electron main process), wrapped behind a `LiveSource` interface |
+| Persistence | SQLite (`better-sqlite3`) in the app's userData folder |
+| Big numbers | `break_infinity.js` |
+| Packaging | electron-builder → Windows `.exe` (NSIS + portable), macOS `.dmg` (universal) |
+| CI / release | GitHub Actions: build on push, publish release artifacts on version tag |
+
+The streamer captures the game window with OBS Window/Game Capture. Do not render the 3D scene twice (no extra browser-source copy).
+
+## Architecture
+
+```
+Electron main process
+ ├─ LiveSource (TikTok connector | Simulator)  → normalized events
+ ├─ RuleEngine (rules.json)                    → game actions
+ ├─ GameCore (RNG, catches, steals, coins)     → SQLite
+ └─ IPC → game window (Babylon + HTML overlay)
+        → settings window (React)
+```
+
+- `LiveSource` is an interface. Implementations: `TikTokLiveSource` and `SimulatedLiveSource` (keyboard/buttons in settings). The game must be fully playable with the simulator, without going live.
+- **All randomness and game state live in the main process.** Renderers only play animations for results they receive. Never roll RNG in a renderer.
+- Results are computed and saved immediately; animations play from a display queue. Epic+ results may jump the queue.
+
+## Event handling rules
+
+- **Gift streaks**: streakable gifts fire repeatedly during a combo. Count only when the streak ends (`repeatEnd`) and use `repeatCount`. Non-streakable gifts count immediately.
+- **Idempotency**: store each TikTok event id in `gift_events`; ignore duplicates.
+- **Likes arrive in bursts**: aggregate and throttle; never trigger one effect per like event.
+- **Identity**: key players by TikTok `userId`, never by `uniqueId`/username (usernames change). Store the latest display name and avatar URL.
+- **Connection drops are normal**: auto-reconnect with backoff, log raw events so lost gifts can be compensated.
+
+## Gift → event rules (config)
+
+Rules live in `rules.json` in userData, hot-reloaded, and edited through the settings window (which reads and writes the same file). Shape:
+
+```json
+{
+  "rules": [
+    { "trigger": { "type": "gift", "giftId": 5655 },     "action": { "type": "cast", "count": 1 } },
+    { "trigger": { "type": "gift", "minDiamonds": 99 },  "action": { "type": "net", "count": 5 } },
+    { "trigger": { "type": "likes", "every": 10000 },    "action": { "type": "frenzy", "durationSec": 30, "rareMultiplier": 3 } },
+    { "trigger": { "type": "comment", "command": "!สมุด" }, "action": { "type": "showCollection", "cooldownSec": 30 } }
+  ]
+}
+```
+
+- Trigger types: `gift` (by `giftId` or `minDiamonds`), `likes`, `comment`, `follow`, `share`.
+- Action types: `cast`, `net`, `steal`, `guard`, `frenzy`, `showCollection`, `boost`.
+- When several rules match, the most specific wins: `giftId` beats `minDiamonds`; higher `minDiamonds` beats lower.
+- Validate the file with a schema (zod) on load; on error keep the last valid rules and show the error in settings.
+
+## Game rules (current design)
+
+- **Weight** = base weight × size multiplier (heavy-tailed: log-normal/Pareto) × mutation multipliers (stack) × pond/rod multiplier.
+- **Mutations** (initial): gold ×5, diamond ×50, lava ×200, neutron star ×10,000, black hole ×1,000,000.
+- **Rarity**: Common → Uncommon → Rare → Epic → Legendary → Mythic. Pity: guaranteed Rare+ after 30 casts without one.
+- **Tank**: catches produce coins per second by weight. Compute lazily (`coins += rate × elapsed`) when read; no per-second ticking.
+- **Steal**: a configured gift tries to steal the heaviest fish of the #1 player, with a success rate. Victims get consolation pity. A guard action blocks steals for a time.
+- **Ponds**: village → Mekong → deep sea → space → black-hole dimension; base weights differ by ~1000×.
+- Store weights as `weight_log10` (REAL) for sorting/leaderboards plus a display-safe representation; never rely on JS `number` above ~1e308.
+
+## Visual direction
+
+- **HD-2D**: low-poly 3D environment with pixel textures; characters are 2D pixel-art sprites on billboard **plane meshes** (not `SpriteManager`) so they receive light and cast shadows. Nearest filtering on pixel textures.
+- Post-processing via `DefaultRenderingPipeline`: tilt-shift depth of field, bloom, vignette, light grain. Narrow-FOV perspective camera, ~30° downward.
+- **Big fish are shown big, not just as numbers.** Length scales with the cube root of weight. A catch plays a 6–8 s reveal: close-up reel-in → fish rises → camera dollies back while scale references enter the frame (dock, houses, temple, mountains, clouds, planet).
+- **Do not build kilometre-scale geometry.** Switch between scale tiers (pond → village → province → space), each authored at an engine-friendly scale, and fake distance with fog and DOF. Use logarithmic depth only if depth artifacts appear.
+- Density mutations (black hole, neutron star) are the opposite joke: a 2 cm fish that breaks the dock.
+- Fish: one low-poly model per species, swim via vertex-shader sine bend; mutations are materials (emissive lava cracks, fresnel diamond, dark body + orbiting particle ring for black hole).
+- Portrait 9:16, target 1080×1920 at 60 fps. Provide quality presets (DOF off, lower shadows, render scale) because the streamer's PC is also encoding video.
+
+## Hard constraints
+
+- **No real-world value.** Coins and fish can never be exchanged for money, items or anything outside the game, and cannot be traded between players. This avoids gambling-like mechanics. Show drop rates publicly in the settings/overlay.
+- `tiktok-live-connector` is unofficial and may break or require a sign server/API key. Keep all TikTok-specific code inside `TikTokLiveSource`.
+- Never commit API keys or session cookies. Use the OS keychain or an untracked config file.
+- Unsigned builds trigger Windows SmartScreen and macOS Gatekeeper warnings. Document the workaround in the README until signing is set up.
+
+## Repository conventions
+
+- TypeScript strict mode everywhere.
+- Planned layout (create as needed):
+  - `apps/desktop/` — Electron main, preload, packaging config
+  - `apps/game/` — Babylon renderer + HTML overlay
+  - `apps/settings/` — React settings UI
+  - `packages/core/` — game rules, RNG, rule engine, persistence (pure TS, no Electron/Babylon imports; unit-tested)
+  - `packages/live/` — `LiveSource` interface and implementations
+- Game logic in `packages/core` must be deterministic given a seeded RNG, so it can be unit-tested (Vitest).
+- Commands: not set up yet. Add install/dev/test/build commands here once the scaffold exists.
