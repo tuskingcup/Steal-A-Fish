@@ -98,7 +98,7 @@ function queueCard(e: CatchEvent): void {
     rarity: e.fish.rarity,
     urgent: rarityRank(e.fish.rarity) >= rarityRank("epic"),
     html:
-      `<div class="who"><b>@${esc(e.name)}</b> ${esc(th.caught)}</div>` +
+      `<div class="catcher">@${esc(e.name)}</div>` +
       `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
       `<div class="points">${esc(formatPoints(e.fish.price))}</div>` +
       `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
@@ -229,7 +229,8 @@ function renderReveal(): void {
   }
   revealEl.className = `${stage} r-${e.fish.rarity}`;
   revealEl.innerHTML =
-    `<div class="who"><b>@${esc(e.name)}</b> ${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
+    `<div class="catcher">@${esc(e.name)}</div>` +
+    `<div class="who">${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="points">${esc(formatPoints(e.fish.price))}</div>` +
     `<div class="len">${esc(formatWeight(e.fish.weightLog10))} · ${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +

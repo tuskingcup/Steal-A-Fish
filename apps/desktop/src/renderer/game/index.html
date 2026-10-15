@@ -43,6 +43,8 @@
       background: #071C29F0; border: 3px solid var(--rc); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 0 28px var(--rc); display: none; }
     #card.show { display: block; animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
     #card .who { font-size: 15px; color: #9FE3E6; }
+    /* The catcher's name is as big as the points: it's their moment. */
+    #card .catcher, #reveal .catcher { font-size: 38px; font-weight: 900; color: #FFFFFF; line-height: 1.15; text-shadow: 0 2px 0 #0009; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #card .name { font-size: 26px; font-weight: 800; margin: 4px 0; color: var(--rc); }
     /* Points are the headline; weight is a detail. */
     #card .points, #reveal .points { font-size: 38px; font-weight: 900; color: #FFD866; text-shadow: 0 2px 0 #0009, 0 0 14px #FFC23D88; line-height: 1.15; }
@@ -60,7 +62,7 @@
     #summary .podium .medal { width: 1.6em; }
     #summary .podium .pname { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #summary .browser { margin-top: auto; }
-    #summary .bhead { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; }
+    #summary .bhead { display: flex; align-items: center; gap: 8px; font-size: 26px; font-weight: 900; }
     #summary .bhead .bname { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #summary .arrow { color: #FFC23D; font-size: 22px; }
     #summary .stats { font-size: 13px; color: #9FE3E6; text-align: center; margin: 2px 0 6px; }
