@@ -39,6 +39,8 @@
     #card .name { font-size: 26px; font-weight: 800; margin: 4px 0; color: var(--rc); }
     #card .weight { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #0008; }
     #card .best { color: #FFC23D; font-weight: 700; font-size: 14px; }
+    #card .price { font-size: 18px; font-weight: 700; margin-top: 2px; }
+    .coin { color: #FFD866; font-weight: 700; white-space: nowrap; }
     @keyframes pop { from { transform: translateX(-50%) scale(.6); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
 
     #summary { position: fixed; inset: 128px 12px 12px; display: none; flex-direction: column; gap: 10px; pointer-events: none; }
@@ -55,6 +57,7 @@
     #summary .stats { font-size: 13px; color: #9FE3E6; text-align: center; margin: 2px 0 6px; }
     #summary .fish { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; border-top: 1px solid #2D6E8455; }
     #summary .fish .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #summary .fish .fname small { color: #9FE3E6; margin-left: 6px; font-size: 12px; }
     #summary .fish .fw { font-weight: 700; font-variant-numeric: tabular-nums; }
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
     body.in-summary #feed, body.in-summary #joinhint { display: none; }

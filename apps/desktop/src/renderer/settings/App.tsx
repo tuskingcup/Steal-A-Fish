@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { MUTATIONS, PITY_CASTS, RARITIES, rarityPercents, type RoundState } from "@saf/core";
+import { MUTATIONS, PITY_CASTS, RARITIES, rarityPercents, SPECIES, type RoundState } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
-import { describeAction, describeEvent, formatClock, mutationTh, rarityTh, th } from "../shared/strings.th";
+import { describeAction, describeEvent, formatClock, mutationTh, rarityTh, speciesTh, th } from "../shared/strings.th";
 
 /** Public drop table (shown to everyone: no hidden odds). */
 const PERCENTS = rarityPercents();
@@ -145,7 +145,7 @@ export function App() {
             {MUTATIONS.map((m) => (
               <tr key={m.id}>
                 <td>
-                  {mutationTh[m.id]} ×{m.multiplier.toLocaleString("th-TH")}
+                  {mutationTh[m.id]} ({th.mutationEffect(m.multiplier.toLocaleString("th-TH"), m.priceMultiplier.toLocaleString("th-TH"))})
                 </td>
                 <td>{fmtPct(m.chance * 100)}%</td>
               </tr>
@@ -153,6 +153,22 @@ export function App() {
           </tbody>
         </table>
         <p className="hint">{th.pityNote.replace("30", String(PITY_CASTS))}</p>
+        <h2>{th.priceTable}</h2>
+        <table className="rates">
+          <tbody>
+            {SPECIES.map((sp) => (
+              <tr key={sp.id}>
+                <td className={`r-${sp.rarity}`}>
+                  {speciesTh[sp.id] ?? sp.id} · {rarityTh[sp.rarity]}
+                </td>
+                <td>
+                  {sp.price.toLocaleString("th-TH")} {th.coinsUnit}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="hint">{th.priceNote}</p>
         <p className="hint">{th.noRealValue}</p>
       </section>
 

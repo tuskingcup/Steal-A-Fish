@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRarePlus, PITY_CASTS, rarityPercents, rollCatch, SPECIES } from "./fish";
+import { isRarePlus, PITY_CASTS, priceOf, rarityPercents, rollCatch, SPECIES } from "./fish";
 import { createSeededRng } from "./rng";
 
 describe("rollCatch", () => {
@@ -46,6 +46,21 @@ describe("rollCatch", () => {
       if (fish.mutations.length > 0) mutated++;
     }
     expect(mutated).toBeGreaterThan(0);
+  });
+
+  it("prices fish by species, size and mutations", () => {
+    expect(priceOf("tilapia", 1, [])).toBe(10);
+    expect(priceOf("tilapia", 2, [])).toBe(20); // twice the size, twice the price
+    expect(priceOf("tilapia", 1, ["gold"])).toBe(30);
+    expect(priceOf("tilapia", 1, ["gold", "diamond"])).toBe(300); // multipliers stack
+    expect(priceOf("nagaFish", 1, [])).toBeGreaterThan(priceOf("mekongGiantCatfish", 1, []));
+    expect(priceOf("tilapia", 0.01, [])).toBe(1); // never free
+
+    const rng = createSeededRng(21);
+    for (let i = 0; i < 1_000; i++) {
+      const { fish } = rollCatch(rng, { pity: 0 });
+      expect(fish.price).toBe(priceOf(fish.speciesId, fish.size, fish.mutations));
+    }
   });
 
   it("boosts Rare-and-above chances", () => {

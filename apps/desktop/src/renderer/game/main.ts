@@ -1,6 +1,6 @@
 import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
 import { createPondScene } from "./scene";
-import { describeAction, fishName, formatClock, formatWeight, rarityTh, th } from "../shared/strings.th";
+import { describeAction, fishName, formatClock, formatCoins, formatWeight, rarityTh, th } from "../shared/strings.th";
 
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
 const feed = document.getElementById("feed") as HTMLDivElement;
@@ -99,6 +99,7 @@ function showNextCard(): void {
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations))}</div>` +
     `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
     `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
+    `<div class="price">${esc(th.sellPrice)} ${esc(formatCoins(e.fish.price))}</div>` +
     (e.personalBest ? `<div class="best">${esc(th.newBest)}</div>` : "");
   void card.offsetWidth; // restart the pop animation
   card.className = `r-${e.fish.rarity} show`;
@@ -112,7 +113,7 @@ window.saf.onCatch((e) => {
   if (rarityRank(e.fish.rarity) >= rarityRank("uncommon") || e.fish.mutations.length > 0) {
     push(
       `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations))}</span> ` +
-        esc(formatWeight(e.fish.weightLog10)),
+        `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatCoins(e.fish.price))}</span>`,
     );
   }
   if (rarityRank(e.fish.rarity) >= rarityRank("rare") || e.fish.mutations.length > 0) queueCard(e);
@@ -178,7 +179,7 @@ function renderSummary(): void {
       const best = p.fish[0]!;
       return (
         `<div><span class="medal">${MEDALS[i]}</span><span class="pname">${esc(p.name)}</span>` +
-        `<span class="rarity r-${best.rarity}">${esc(formatWeight(p.bestLog10))}</span></div>`
+        `<span class="coin">${esc(formatCoins(p.totalValue))}</span></div>`
       );
     })
     .join("");
@@ -192,14 +193,15 @@ function renderSummary(): void {
       .map(
         (f) =>
           `<div class="fish r-${f.rarity}"><span class="chip">${esc(rarityTh[f.rarity])}</span>` +
-          `<span class="fname">${esc(fishName(f.speciesId, f.mutations))}</span><span class="fw">${esc(formatWeight(f.weightLog10))}</span></div>`,
+          `<span class="fname">${esc(fishName(f.speciesId, f.mutations))}<small>${esc(formatWeight(f.weightLog10))}</small></span>` +
+          `<span class="fw coin">${esc(formatCoins(f.price))}</span></div>`,
       )
       .join("");
     const more = p.fish.length > FISH_ROWS ? `<div class="stats">+${p.fish.length - FISH_ROWS}</div>` : "";
     browser =
       `<div class="bhead"><span class="arrow">◀</span><span class="bname">${p.rank <= 3 ? MEDALS[p.rank - 1] + " " : ""}${esc(p.name)}</span><span class="arrow">▶</span></div>` +
       `<div class="stats">${esc(th.rank(p.rank, players.length))} · ${esc(th.fishCount(p.fish.length))}` +
-      (p.fish.length > 0 ? ` · ${esc(th.total)} ${esc(formatWeight(p.totalLog10))}` : "") +
+      (p.fish.length > 0 ? ` · ${esc(th.totalValue)} <span class="coin">${esc(formatCoins(p.totalValue))}</span>` : "") +
       `</div>` +
       (rows || `<div class="stats">${esc(th.noFish)}</div>`) +
       more +

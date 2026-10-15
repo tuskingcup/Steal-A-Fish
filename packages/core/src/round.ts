@@ -5,7 +5,8 @@ import type { Rng } from "./rng";
 /**
  * Round-based play. Viewers opt in each round (by typing the join command in chat); everyone who
  * joined casts automatically on a timer, and gifts add extra casts. A round runs for a fixed time,
- * then a summary is shown for a while before the next round opens. Ranking is by heaviest fish.
+ * then a summary is shown for a while before the next round opens. Ranking is by the total sell
+ * price of every fish a player caught this round.
  *
  * Pure and clock-free: the caller passes `now` (ms) everywhere, so it is fully testable.
  */
@@ -41,6 +42,8 @@ export interface CatchEvent {
   fish: CaughtFish;
   /** True when this fish is the player's new heaviest. */
   personalBest: boolean;
+  /** The player's round total (coins) including this fish. */
+  totalValue: number;
 }
 
 export interface RoundState {
@@ -58,7 +61,9 @@ export interface PlayerSummary {
   bestLog10: number;
   /** log10 of the summed weight of every fish. */
   totalLog10: number;
-  /** Heaviest first. */
+  /** Total sell price of every fish (what the ranking uses). */
+  totalValue: number;
+  /** Most valuable first. */
   fish: CaughtFish[];
 }
 
@@ -72,6 +77,7 @@ interface Player {
   name: string;
   fish: CaughtFish[];
   best: number;
+  value: number;
   pity: number;
   nextAutoCast: number;
 }
@@ -187,12 +193,12 @@ export class RoundGame {
     return result;
   }
 
-  /** Ranks 1–3 by heaviest fish (the current #1 keeps it on a tie). */
+  /** Ranks 1–3 by total value (the current #1 keeps it on a tie). */
   podium(): { userId: string; name: string }[] {
     return this.board.top(3).map((id) => ({ userId: id, name: this.players.get(id)?.name ?? id }));
   }
 
-  /** Everyone in the round, ranked by heaviest fish; players who caught nothing come last. */
+  /** Everyone in the round, ranked by total value; players who caught nothing come last. */
   summary(): RoundSummary {
     const order = this.board.top(this.players.size);
     const ranked = [...order, ...[...this.players.keys()].filter((id) => !order.includes(id))];
@@ -206,7 +212,8 @@ export class RoundGame {
           rank: i + 1,
           bestLog10: p.best,
           totalLog10: sumLog10(p.fish.map((f) => f.weightLog10)),
-          fish: [...p.fish].sort((a, b) => b.weightLog10 - a.weightLog10),
+          totalValue: p.value,
+          fish: [...p.fish].sort((a, b) => b.price - a.price || b.weightLog10 - a.weightLog10),
         };
       }),
     };
@@ -223,6 +230,7 @@ export class RoundGame {
       name,
       fish: [],
       best: -Infinity,
+      value: 0,
       pity: this.pity.get(userId) ?? 0,
       nextAutoCast: now + this.config.firstCastMs,
     });
@@ -236,11 +244,10 @@ export class RoundGame {
     const caught: CaughtFish = { ...fish, id: this.nextFishId++, at: now };
     player.fish.push(caught);
     const personalBest = fish.weightLog10 > player.best;
-    if (personalBest) {
-      player.best = fish.weightLog10;
-      this.board.set(player.userId, fish.weightLog10);
-    }
-    return { round: this.round, userId: player.userId, name: player.name, fish: caught, personalBest };
+    if (personalBest) player.best = fish.weightLog10;
+    player.value += fish.price;
+    this.board.set(player.userId, player.value);
+    return { round: this.round, userId: player.userId, name: player.name, fish: caught, personalBest, totalValue: player.value };
   }
 }
 

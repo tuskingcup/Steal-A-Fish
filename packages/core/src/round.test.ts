@@ -46,7 +46,7 @@ describe("RoundGame", () => {
     expect(g.isPlaying("a")).toBe(false); // must type the join command again
   });
 
-  it("ranks by heaviest fish and lists everyone's catches heaviest first", () => {
+  it("ranks by total value and lists everyone's catches most valuable first", () => {
     const g = newGame();
     g.start(0);
     for (const id of ["a", "b", "c", "d"]) g.join(id, id.toUpperCase(), 0);
@@ -54,10 +54,11 @@ describe("RoundGame", () => {
     const s = g.end(2_000);
     expect(s.players.map((p) => p.rank)).toEqual([1, 2, 3, 4]);
     expect(s.players[3]!.userId).toBe("d"); // caught nothing: last
-    for (let i = 0; i < 2; i++) expect(s.players[i]!.bestLog10).toBeGreaterThanOrEqual(s.players[i + 1]!.bestLog10);
+    for (let i = 0; i < 2; i++) expect(s.players[i]!.totalValue).toBeGreaterThanOrEqual(s.players[i + 1]!.totalValue);
     const fish = s.players[0]!.fish;
     expect(fish).toHaveLength(10);
-    for (let i = 1; i < fish.length; i++) expect(fish[i - 1]!.weightLog10).toBeGreaterThanOrEqual(fish[i]!.weightLog10);
+    expect(s.players[0]!.totalValue).toBe(fish.reduce((sum, f) => sum + f.price, 0));
+    for (let i = 1; i < fish.length; i++) expect(fish[i - 1]!.price).toBeGreaterThanOrEqual(fish[i]!.price);
     expect(g.podium().map((p) => p.userId)).toEqual(s.players.slice(0, 3).map((p) => p.userId));
   });
 

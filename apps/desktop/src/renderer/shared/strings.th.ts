@@ -24,6 +24,12 @@ export const th = {
   fishCount: (n: number) => `ปลา ${n} ตัว`,
   heaviest: "หนักสุด",
   total: "รวม",
+  totalValue: "มูลค่ารวม",
+  coinsUnit: "เหรียญ",
+  mutationEffect: (weight: string, price: string) => `น้ำหนัก ×${weight}, ราคา ×${price}`,
+  sellPrice: "ขายได้",
+  priceTable: "ราคาขายปลา (เหรียญในเกม)",
+  priceNote: "ราคาขาย = ราคาพันธุ์ปลา × ขนาดตัว (ใหญ่กว่าปกติ 2 เท่า ได้ 2 เท่า) × ตัวคูณการกลายพันธุ์ · อันดับคิดจากมูลค่ารวมของปลาทุกตัวในรอบ",
   noFish: "ยังไม่ได้ปลาเลย",
   browseHint: "← / → ดูปลาของแต่ละคน",
 
@@ -45,7 +51,7 @@ export const th = {
   startRound: "เริ่มรอบใหม่ทันที",
   endRound: "จบรอบตอนนี้",
   simJoin: "คอมเมนต์ 1 (ร่วมเล่น)",
-  roundRules: "รอบละ 5 นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · ทุกคนที่ร่วมเหวี่ยงเบ็ดฟรีทุก 30 วิ · ของขวัญ = เหวี่ยงเพิ่ม (ส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากปลาตัวที่หนักที่สุด",
+  roundRules: "รอบละ 5 นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · ทุกคนที่ร่วมเหวี่ยงเบ็ดฟรีทุก 30 วิ · ของขวัญ = เหวี่ยงเพิ่ม (ส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากมูลค่ารวมของปลาทุกตัวที่ตกได้",
   dropRates: "อัตราการได้ปลา (ต่อการเหวี่ยง 1 ครั้ง)",
   mutationRates: "โอกาสกลายพันธุ์ (ซ้อนกันได้)",
   pityNote: "การันตีปลาระดับหายากขึ้นไป ภายใน 30 ครั้ง · FISH FRENZY เพิ่มโอกาสปลาหายาก",
@@ -137,19 +143,29 @@ const thNumber = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const SMALL_UNITS = ["พัน", "หมื่น", "แสน"] as const;
 
 /**
- * Weight from log10(kg) in Thai units, e.g. "3.25 ล้าน กก.", "4.18 หมื่นล้าน กก.", "1.2 ล้านล้าน กก.".
+ * A big quantity given as log10, in Thai units: "3.25 ล้าน", "4.18 หมื่นล้าน", "1.2 ล้านล้าน".
  * Thai counts big numbers in millions of millions (plus พัน/หมื่น/แสน in between), so any size
  * stays short and readable without ever building a JS number above 1e6.
  */
-export function formatWeight(log10: number): string {
+function formatBig(log10: number, unit: string): string {
   if (!Number.isFinite(log10)) return "-";
-  if (log10 < 6) return `${thNumber.format(10 ** log10)} กก.`;
+  if (log10 < 6) return `${thNumber.format(10 ** log10)} ${unit}`;
   const groups = Math.floor(log10 / 6);
   const rest = log10 - groups * 6; // 0 ≤ rest < 6
   const small = rest >= 3 ? Math.min(Math.floor(rest) - 3, 2) : -1;
   const mantissa = 10 ** (rest - (small >= 0 ? small + 3 : 0));
   const digits = mantissa >= 100 ? 0 : mantissa >= 10 ? 1 : 2;
-  return `${mantissa.toFixed(digits)} ${small >= 0 ? SMALL_UNITS[small] : ""}${"ล้าน".repeat(groups)} กก.`;
+  return `${mantissa.toFixed(digits)} ${small >= 0 ? SMALL_UNITS[small] : ""}${"ล้าน".repeat(groups)} ${unit}`;
+}
+
+/** Weight from log10(kg), e.g. "4.18 หมื่นล้าน กก.". */
+export function formatWeight(log10: number): string {
+  return formatBig(log10, "กก.");
+}
+
+/** In-game coins, e.g. "1,250 เหรียญ", "3.4 ล้าน เหรียญ". */
+export function formatCoins(coins: number): string {
+  return `🪙 ${coins <= 0 ? "0 เหรียญ" : formatBig(Math.log10(coins), "เหรียญ")}`;
 }
 
 /** m:ss */
