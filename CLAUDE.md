@@ -87,7 +87,8 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 
 ## Visual direction
 
-- **HD-2D**: low-poly 3D environment with pixel textures; characters are 2D pixel-art sprites on billboard **plane meshes** (not `SpriteManager`) so they receive light and cast shadows. Nearest filtering on pixel textures.
+- **HD-2D**: low-poly 3D environment with pixel textures; characters are 2D pixel-art sprites on billboard **plane meshes** (not `SpriteManager`). Nearest filtering on pixel textures.
+- The camera **orbits 360°** around the fisher (drag to rotate, wheel to zoom). Character sprites are directional: each character is described as SDF shapes and baked at load into toon-shaded, outlined pixel frames for 16 view directions (`fisherSprite.ts`); the billboard shows the frame matching the camera angle. Lighting is baked into the frames (sprite material is unlit) and a blob shadow sits under the sprite. Held props (the rod) are 3D meshes anchored at the sprite's hand point.
 - Post-processing via `DefaultRenderingPipeline`: tilt-shift depth of field, bloom, vignette, light grain. Narrow-FOV perspective camera, ~30° downward.
 - **Big fish are shown big, not just as numbers.** Length scales with the cube root of weight. A catch plays a 6–8 s reveal: close-up reel-in → fish rises → camera dollies back while scale references enter the frame (dock, houses, temple, mountains, clouds, planet).
 - **Do not build kilometre-scale geometry.** Switch between scale tiers (pond → village → province → space), each authored at an engine-friendly scale, and fake distance with fog and DOF. Use logarithmic depth only if depth artifacts appear.
