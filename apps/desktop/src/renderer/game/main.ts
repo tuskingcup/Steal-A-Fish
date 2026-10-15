@@ -219,23 +219,26 @@ window.saf.onPodium((podium) => {
   championId = champion?.userId ?? null;
 });
 
-// ---------- Round summary: podium, everyone's fish in the tank, and a list browser ----------
+// ---------- Round summary: podium, then each player's fish one at a time at true scale ----------
 
 let summary: RoundSummary | null = null;
-let selected = 0;
+let playerIdx = 0;
+let fishIdx = 0;
+/** Key of the fish on the stage, so re-renders don't rebuild the same exhibit. */
+let shownFish = "";
 /** Auto-browse waits until this time (longer after a key press, so the streamer stays in control). */
 let holdUntil = 0;
 const MEDALS = ["🥇", "🥈", "🥉"];
-/** The tank shows the fish in 3D, so the list stays short and leaves the middle of the screen free. */
-const FISH_ROWS = 4;
-const AUTO_BROWSE_MS = 6000;
+const AUTO_BROWSE_MS = 7000;
 const MANUAL_HOLD_MS = 15000;
-const FIRST_HOLD_MS = 9000;
+const FIRST_HOLD_MS = 10000;
 
 window.saf.onSummary((s) => {
   summary = s;
-  selected = 0;
-  holdUntil = Date.now() + FIRST_HOLD_MS; // let the winner sink in first
+  playerIdx = 0;
+  fishIdx = 0;
+  shownFish = "";
+  holdUntil = Date.now() + FIRST_HOLD_MS; // let the winner's best fish sink in first
   cardQueue.length = 0;
   revealQueue.length = 0;
   pond.abortReveal();
@@ -245,16 +248,32 @@ window.saf.onSummary((s) => {
 });
 
 function hideSummary(): void {
-  if (summary) pond.showTank(null);
+  if (summary) pond.showExhibit(null);
   summary = null;
+  shownFish = "";
   document.body.classList.remove("in-summary");
   summaryEl.classList.remove("show");
 }
 
-function select(step: number): void {
+/** ↑/↓: another player (starting from their most valuable fish). */
+function selectPlayer(step: number): void {
   if (!summary || summary.players.length === 0) return;
   const n = summary.players.length;
-  selected = (selected + step + n) % n;
+  playerIdx = (playerIdx + step + n) % n;
+  fishIdx = 0;
+  renderSummary();
+}
+
+/** ←/→: the current player's next fish; past either end moves on to the neighbouring player. */
+function selectFish(step: number): void {
+  const p = summary?.players[playerIdx];
+  if (!p) return;
+  const next = fishIdx + step;
+  if (next < 0 || next >= p.fish.length) {
+    const n = summary!.players.length;
+    playerIdx = (playerIdx + step + n) % n;
+    fishIdx = step < 0 ? Math.max(0, (summary!.players[playerIdx]?.fish.length ?? 1) - 1) : 0;
+  } else fishIdx = next;
   renderSummary();
 }
 
@@ -264,36 +283,37 @@ function renderSummary(): void {
   const podium = players
     .slice(0, 3)
     .filter((p) => p.fish.length > 0)
-    .map((p, i) => {
-      const best = p.fish[0]!;
-      return (
+    .map(
+      (p, i) =>
         `<div><span class="medal">${MEDALS[i]}</span><span class="pname">${esc(p.name)}</span>` +
-        `<span class="coin">${esc(formatCoins(p.totalValue))}</span></div>`
-      );
-    })
+        `<span class="coin">${esc(formatCoins(p.totalValue))}</span></div>`,
+    )
     .join("");
 
   let browser = `<div class="stats">${esc(th.noPlayers)}</div>`;
-  const p = players[selected];
+  const p = players[playerIdx];
   if (p) {
-    pond.showTank({ userId: p.userId, fish: p.fish });
-    const rows = p.fish
-      .slice(0, FISH_ROWS)
-      .map(
-        (f) =>
-          `<div class="fish r-${f.rarity}"><span class="chip">${esc(rarityTh[f.rarity])}</span>` +
-          `<span class="fname">${esc(fishName(f.speciesId, f.mutations, f.sizeClass))}<small>${esc(formatWeight(f.weightLog10))}</small></span>` +
-          `<span class="fw coin">${esc(formatCoins(f.price))}</span></div>`,
-      )
-      .join("");
-    const more = p.fish.length > FISH_ROWS ? `<div class="stats">+${p.fish.length - FISH_ROWS}</div>` : "";
+    const f = p.fish[fishIdx];
+    const key = f ? `${p.userId}#${fishIdx}` : `${p.userId}#none`;
+    if (key !== shownFish) {
+      shownFish = key;
+      pond.showExhibit(f ? { userId: p.userId, fish: f } : null);
+    }
+    const detail = f
+      ? `<div class="exfish r-${f.rarity}">` +
+        `<div class="exname">${esc(fishName(f.speciesId, f.mutations, f.sizeClass))} <span class="chip">${esc(rarityTh[f.rarity])}</span></div>` +
+        `<div class="exnums"><span>${esc(formatWeight(f.weightLog10))}</span>` +
+        `<span>${esc(th.lengthAbout(formatLength(fishLengthMeters(f.weightLog10, f.mutations))))}</span></div>` +
+        `<div class="exprice">${esc(th.sellPrice)} <span class="coin">${esc(formatCoins(f.price))}</span>` +
+        `<small>${esc(th.fishOf(fishIdx + 1, p.fish.length))}</small></div>` +
+        `</div>`
+      : `<div class="stats">${esc(th.noFish)}</div>`;
     browser =
-      `<div class="bhead"><span class="arrow">◀</span><span class="bname">${p.rank <= 3 ? MEDALS[p.rank - 1] + " " : ""}${esc(p.name)}</span><span class="arrow">▶</span></div>` +
+      `<div class="bhead"><span class="arrow">▲</span><span class="bname">${p.rank <= 3 ? MEDALS[p.rank - 1] + " " : ""}${esc(p.name)}</span><span class="arrow">▼</span></div>` +
       `<div class="stats">${esc(th.rank(p.rank, players.length))} · ${esc(th.fishCount(p.fish.length))}` +
       (p.fish.length > 0 ? ` · ${esc(th.totalValue)} <span class="coin">${esc(formatCoins(p.totalValue))}</span>` : "") +
       `</div>` +
-      (rows || `<div class="stats">${esc(th.noFish)}</div>`) +
-      more +
+      detail +
       `<div class="hint">${esc(th.browseHint)}</div>`;
   }
 
@@ -302,24 +322,39 @@ function renderSummary(): void {
     `<div class="panel browser">${browser}</div>`;
 }
 
-// When nobody is pressing keys (the streamer is busy talking), walk through everyone on its own.
+// When nobody is pressing keys (the streamer is busy talking), show each player's best fish in turn.
 setInterval(() => {
   if (!summary || Date.now() < holdUntil) return;
   holdUntil = Date.now() + AUTO_BROWSE_MS;
-  select(1);
+  selectPlayer(1);
 }, 500);
+
+// Flash on the cut to the exhibit stage and back; hide the bay's name tags while it is up.
+let wasExhibiting = false;
+setInterval(() => {
+  const on = pond.reveal.exhibiting();
+  document.body.classList.toggle("exhibiting", on);
+  if (on !== wasExhibiting) {
+    wasExhibiting = on;
+    flashEl.className = "";
+    void flashEl.offsetWidth;
+    flashEl.className = "go";
+  }
+}, 100);
 
 // ---------- Keys ----------
 
-// ←/→ (or A/D): during the summary, browse players' fish; otherwise visit each fisher. Esc: overview.
+// During the summary: ←/→ steps through a player's fish, ↑/↓ changes player.
+// Otherwise ←/→ (or A/D) visits each fisher. Esc: overview.
 window.addEventListener("keydown", (e) => {
   const step = e.key === "ArrowRight" || e.key === "d" || e.key === "D" ? 1 : e.key === "ArrowLeft" || e.key === "a" || e.key === "A" ? -1 : 0;
-  if (step !== 0) {
-    if (summary) {
-      holdUntil = Date.now() + MANUAL_HOLD_MS;
-      select(step);
-    } else pond.focusStep(step);
-  } else if (e.key === "Escape") pond.focusOverview();
+  const vstep = e.key === "ArrowDown" || e.key === "s" || e.key === "S" ? 1 : e.key === "ArrowUp" || e.key === "w" || e.key === "W" ? -1 : 0;
+  if (summary && (step !== 0 || vstep !== 0)) {
+    holdUntil = Date.now() + MANUAL_HOLD_MS;
+    if (step !== 0) selectFish(step);
+    else selectPlayer(vstep);
+  } else if (step !== 0) pond.focusStep(step);
+  else if (e.key === "Escape") pond.focusOverview();
   else return;
   e.preventDefault();
 });

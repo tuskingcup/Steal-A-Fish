@@ -10,22 +10,27 @@ import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { avatarFor, type MutationId } from "@saf/core";
-import { createFishModel, isDense, type FishModel } from "./fishModels";
+import { avatarFor, type MutationId, type Rarity } from "@saf/core";
+import { createAura, glowFor, splashBurst, type Aura } from "./effects";
+import { createFishModel, finishFor, isDense, type FishModel } from "./fishModels";
 import { createFisherSprite, type FisherSprite } from "./fisherSprite";
 import { flat, hash01, lowPolyMat } from "./materials";
 
 /**
- * The big-catch reveal (~8 s): hook on the fisher → flash → the fish leaps out of the water on a
- * separate reveal stage → the camera dollies back while scale references pop in beside it.
+ * The reveal stage, far out at sea, used two ways:
+ * - the big-catch reveal (~8 s): hook on the fisher → flash → the fish leaps out of the water →
+ *   the camera dollies back while scale references pop in beside it;
+ * - the summary exhibit: one fish at a time, at true scale beside its owner, camera slowly orbiting.
  *
- * Kilometre-long fish are never built at real scale: the fish stays a fixed size on the stage and
- * every reference is scaled down relative to it (units per metre = FISH_UNITS / length). Density
- * mutations play the opposite joke: a tiny glowing fish lands on a dock and snaps it in half.
+ * True scale without kilometre geometry: units per metre = FISH_UNITS / max(fish length, a person),
+ * so a 30 cm fish is shown small next to its owner and a 13 km fish stays 4 units long with Everest
+ * scaled down beside it. Legendary+ and mutated fish get showpiece effects (effects.ts). Density
+ * mutations play the opposite joke in the reveal: a tiny glowing fish snaps a dock in half.
  */
 
 export interface RevealFish {
   speciesId: string;
+  rarity: Rarity;
   mutations: MutationId[];
   weightLog10: number;
 }
@@ -45,15 +50,18 @@ export interface RevealLabel {
 export interface Reveal {
   /** True while a reveal is playing. */
   active(): boolean;
-  /** True while the reveal drives the camera (the stage part). */
+  /** True while the stage drives the camera (reveal on stage, or an exhibit). */
   ownsCamera(): boolean;
   play(request: RevealRequest, hookOn: (userId: string) => void, onDone: () => void): void;
+  /** Show one fish at true scale for the round summary (stays until replaced or null). */
+  exhibit(request: RevealRequest | null): void;
+  exhibiting(): boolean;
   /** Stop immediately (e.g. the round ended) and put everything back. */
   abort(): void;
   update(dt: number): void;
   /** Reference labels (keys into the Thai strings) in canvas CSS pixels. */
   labels(cssScale: number): RevealLabel[];
-  /** Where the timeline is, for the overlay: "hook" | "stage" | "info". */
+  /** Where the reveal timeline is, for the overlay. */
   stageOf(): "hook" | "stage" | "info" | null;
 }
 
@@ -71,8 +79,11 @@ const END = 8.2;
 const DENSE_IMPACT = 2.6;
 const DENSE_END = 6.6;
 
-/** Fish length on the stage, in scene units. */
+/** The bigger of the fish and a person is this long on the stage, in scene units. */
 const FISH_UNITS = 4;
+const HUMAN_M = 1.7;
+/** Exhibit camera pitch: nearly level, so the horizon (and a Mythic sky) sits behind the fish. */
+const EXHIBIT_BETA = 1.5;
 /** Far out past the bay (the main sea ends at z ≈ 160), with fog hiding the stage water's edge. */
 const STAGE = new Vector3(0, 0, 650);
 
@@ -246,79 +257,120 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
   };
 
   // ---------- State ----------
+  const glow = glowFor(scene);
   let playing = false;
+  let exhibitOn = false;
   let t = 0;
+  let clock = 0;
   let request: RevealRequest | null = null;
   let done: (() => void) | null = null;
   let fishModel: FishModel | null = null;
+  let aura: Aura | null = null;
+  const fishAnchor = new TransformNode("fishAnchor", scene);
+  fishAnchor.parent = stage;
   let refs: PlacedRef[] = [];
+  let platform: Mesh | null = null;
   let dock: ReturnType<typeof buildDock> | null = null;
   let catcher: FisherSprite | null = null;
   let dense = false;
+  let stopSplash: (() => void) | null = null;
+  let splashed = false;
   let savedFog = { start: 0, end: 0 };
   let savedCam = { target: Vector3.Zero(), alpha: 0, beta: 0, radius: 0 };
   let onStage = false;
+  let fishUnits = FISH_UNITS;
   let closeRadius = FISH_UNITS * 1.7;
   let farRadius = FISH_UNITS * 3;
   let farTarget = Vector3.Zero();
   let fishHover = new Vector3(0, FISH_UNITS * 0.75, 0);
 
-  const toStage = (): void => {
-    if (onStage || !request) return;
+  const enterStage = (): void => {
+    if (onStage) return;
     onStage = true;
     savedCam = { target: camera.target.clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius };
     savedFog = { start: scene.fogStart, end: scene.fogEnd };
     scene.fogStart = 150;
     scene.fogEnd = 400;
     stage.setEnabled(true);
-    const f = request.fish;
+  };
+
+  /** Build the fish, its references and its effects on the stage. */
+  const buildDisplay = (req: RevealRequest, revealMode: boolean): void => {
+    const f = req.fish;
     fishModel = createFishModel(scene, f.speciesId, f.mutations);
     fishModel.root.parent = stage;
 
-    if (dense) {
+    if (revealMode && dense) {
       dock = buildDock();
-      catcher = createFisherSprite(scene, avatarFor(request.userId), "stand", new Vector3(), 0);
+      catcher = createFisherSprite(scene, avatarFor(req.userId), "stand", new Vector3(), 0);
       fishModel.root.scaling.setAll(0.3);
+      fishUnits = 0.3;
+      attachEffects(f);
       return;
     }
 
-    // Choose references a meaningful size next to this fish, smallest nearest the fish.
+    // Units per metre: the bigger of the fish and a person fills FISH_UNITS, so small fish look small.
     const length = fishLengthMeters(f.weightLog10, f.mutations);
-    const k = FISH_UNITS / length; // scene units per metre
-    let chosen = REFERENCES.filter((r) => r.size >= length / 60 && r.size <= length * 2.5);
-    if (chosen.length < 2) {
-      chosen = [...REFERENCES].sort((a, b) => Math.abs(Math.log(a.size / length)) - Math.abs(Math.log(b.size / length))).slice(0, 2);
-      chosen.sort((a, b) => a.size - b.size);
-    }
-    let x = FISH_UNITS * 0.6;
-    let tallest = FISH_UNITS * 1.2;
+    const k = FISH_UNITS / Math.max(length, HUMAN_M);
+    fishUnits = Math.max(length * k, 0.12); // dense fish stay visible as a glowing speck
+    // The owner always stands beside their fish; other references only when they help.
+    const others = REFERENCES.filter((r) => r.key !== "human" && r.size >= length / 60 && r.size <= length * 2.5);
+    const chosen = [REFERENCES[0], ...others];
+    let x = fishUnits * 0.6 + 0.15;
+    let tallest = Math.max(fishUnits * 1.2, HUMAN_M * k);
+    const humanH = HUMAN_M * k;
     refs = chosen.map((r, i) => {
       const height = r.size * k;
-      const gap = Math.max(0.25, height * 0.25);
-      const width = r.key === "moon" || r.key === "earth" ? height : r.key === "human" ? height * 0.5 : height * 0.9;
+      const gap = Math.max(0.2, height * 0.25);
+      const width = r.key === "moon" || r.key === "earth" ? height : r.key === "human" ? height * 0.6 : height * 0.9;
       const node = buildRef(r.key);
       x += gap + width / 2;
-      node.position.set(x, 0, 0);
+      node.position.set(x, r.key === "human" ? humanH * 0.08 : 0, 0);
       x += width / 2;
       tallest = Math.max(tallest, height);
       let sprite: FisherSprite | null = null;
-      if (r.key === "human") sprite = createFisherSprite(scene, avatarFor(request!.userId), "stand", new Vector3(), 0);
-      return { key: r.key, node, sprite, height, appearAt: RISE_END + ((i + 0.6) / (chosen.length + 0.6)) * (DOLLY_END - RISE_END), scale: 0 };
+      if (r.key === "human") {
+        sprite = createFisherSprite(scene, avatarFor(req.userId), "stand", new Vector3(), 0);
+        // A small wooden platform so the owner isn't standing on water.
+        platform = CreateBox("ownerPlatform", { width: 1.3, height: 0.16, depth: 1.1 }, scene);
+        platform.parent = stage;
+        platform.material = lowPolyMat(scene, "#9A6A42");
+      }
+      const appearAt = revealMode ? RISE_END + ((i + 0.6) / (chosen.length + 0.6)) * (DOLLY_END - RISE_END) : 0;
+      return { key: r.key, node, sprite, height, appearAt, scale: revealMode ? 0 : 1 };
     });
-    // Frame the fish and every reference (portrait: width usually decides).
-    const left = -FISH_UNITS * 0.6;
+    // Small fish are held up at chest height beside the owner; big ones hang above the water.
+    fishHover = fishUnits < humanH ? new Vector3(0, humanH * 0.62, 0) : new Vector3(0, fishUnits * 0.7, 0);
+    const left = -fishUnits * 0.6 - 0.15;
     const width = x - left;
     const centerX = (left + x) / 2;
     const horizontalPerUnit = 2 * Math.tan(camera.fov / 2) * (9 / 16);
-    farRadius = Math.max((width * 1.25) / horizontalPerUnit, (tallest * 1.5) / (2 * Math.tan(camera.fov / 2)), FISH_UNITS * 3);
-    farTarget = new Vector3(centerX, Math.max(tallest, FISH_UNITS * 1.2) * 0.45, 0);
-    fishHover = new Vector3(0, FISH_UNITS * 0.7, 0);
-    closeRadius = FISH_UNITS * 1.8;
+    farRadius = Math.max((width * 1.3) / horizontalPerUnit, (tallest * 1.6) / (2 * Math.tan(camera.fov / 2)), 3);
+    farTarget = new Vector3(centerX, Math.max(tallest, fishHover.y + fishUnits * 0.3) * 0.5, 0);
+    closeRadius = Math.max(fishUnits * 1.9, 1.2);
+    attachEffects(f);
   };
 
-  const leaveStage = (): void => {
-    if (!onStage) return;
-    onStage = false;
+  const attachEffects = (f: RevealFish): void => {
+    if (!fishModel) return;
+    const finish = finishFor(f.mutations);
+    // Dense fish are specks at true scale: their aura is sized to be seen beside the owner.
+    const auraSize = finish === "blackHole" || finish === "neutronStar" ? Math.max(fishUnits, 1.4) : fishUnits;
+    aura = createAura(scene, fishAnchor, auraSize, f.rarity, finish);
+    // Only self-lit finishes glow as a whole; on metal or scales the glow would wash out the detail
+    // (and the naga's heads, crowns and crest are too detailed to glow at all).
+    const selfLit = (finish === "lava" || finish === "neutronStar" || finish === "blackHole") && f.speciesId !== "nagaFish";
+    const lit = [...(selfLit ? fishModel.meshes : []), ...aura.glowMeshes];
+    for (const m of lit) glow.addIncludedOnlyMesh(m as Mesh);
+    glow.isEnabled = lit.length > 0;
+  };
+
+  const clearDisplay = (): void => {
+    if (fishModel) for (const m of fishModel.meshes) glow.removeIncludedOnlyMesh(m);
+    if (aura) for (const m of aura.glowMeshes) glow.removeIncludedOnlyMesh(m as Mesh);
+    glow.isEnabled = false;
+    aura?.dispose();
+    aura = null;
     fishModel?.dispose();
     fishModel = null;
     for (const r of refs) {
@@ -326,10 +378,20 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
       r.node.dispose();
     }
     refs = [];
+    platform?.dispose();
+    platform = null;
     catcher?.dispose();
     catcher = null;
     dock?.node.dispose();
     dock = null;
+    stopSplash?.();
+    stopSplash = null;
+  };
+
+  const leaveStage = (): void => {
+    clearDisplay();
+    if (!onStage) return;
+    onStage = false;
     stage.setEnabled(false);
     scene.fogStart = savedFog.start;
     scene.fogEnd = savedFog.end;
@@ -367,19 +429,69 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     });
   };
 
+  /** Place references (and the owner on their platform) at their current pop-in scale. */
+  const placeRefs = (time: number): void => {
+    for (const r of refs) {
+      r.node.scaling.setAll(Math.max(0.0001, r.height * r.scale));
+      if (r.sprite) {
+        // Sprites are authored in metres (~1.8 m tall figure); scale to the reference's height.
+        const k = r.height / 1.8;
+        r.sprite.setScale(Math.max(0.0001, k * r.scale));
+        r.sprite.update(camera, time);
+        r.sprite.plane.position.copyFrom(world(r.node.position).add(new Vector3(0, 0.95 * k * r.scale, 0)));
+        if (platform) {
+          platform.position.set(r.node.position.x, r.node.position.y - 0.08 * k * r.scale, 0);
+          platform.scaling.setAll(Math.max(0.0001, k * r.scale));
+        }
+      }
+    }
+  };
+
+  /** Keep the anchor (effects) on the fish and animate it. */
+  const animateFish = (time: number): void => {
+    if (!fishModel) return;
+    fishModel.update(time, time * 6);
+    fishAnchor.position.copyFrom(fishModel.root.position);
+    aura?.update(time);
+  };
+
   return {
     active: () => playing,
-    ownsCamera: () => playing && onStage,
+    ownsCamera: () => onStage,
+    exhibiting: () => exhibitOn,
     stageOf: () => (!playing ? null : t < FLASH_AT ? "hook" : t < (dense ? DENSE_IMPACT : DOLLY_END) ? "stage" : "info"),
 
     play(req, hookOn, onDone) {
+      if (exhibitOn) return; // the summary has the stage
       if (playing) finish();
       playing = true;
       t = 0;
+      splashed = false;
       request = req;
       done = onDone;
       dense = isDense(req.fish.mutations);
       hookOn(req.userId);
+    },
+
+    exhibit(req) {
+      if (playing) finish();
+      clearDisplay();
+      if (!req) {
+        exhibitOn = false;
+        leaveStage();
+        return;
+      }
+      const cut = !exhibitOn; // first fish: cut straight to its framing (under the white flash)
+      exhibitOn = true;
+      dense = false;
+      enterStage();
+      buildDisplay(req, false);
+      if (cut) {
+        camera.target.copyFrom(world(farTarget));
+        camera.radius = farRadius;
+        camera.alpha = Math.PI / 2;
+        camera.beta = EXHIBIT_BETA;
+      }
     },
 
     abort() {
@@ -387,16 +499,34 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     },
 
     update(dt) {
+      clock += dt;
+      if (exhibitOn && fishModel) {
+        // Exhibit: the fish hangs at true scale beside its owner; the camera drifts around it.
+        fishModel.root.position.copyFrom(fishHover);
+        fishModel.root.scaling.setAll(fishUnits);
+        fishModel.root.rotation.y = Math.PI + Math.sin(clock * 0.6) * 0.3;
+        fishModel.root.rotation.z = Math.sin(clock * 1.1) * 0.06;
+        animateFish(clock);
+        placeRefs(clock);
+        const k = 1 - Math.exp(-dt * 2.5); // ease towards each new framing
+        Vector3.LerpToRef(camera.target, world(farTarget), k, camera.target);
+        camera.radius += (farRadius - camera.radius) * k;
+        camera.alpha = Math.PI / 2 + Math.sin(clock * 0.25) * 0.35;
+        camera.beta += (EXHIBIT_BETA - camera.beta) * k;
+        return;
+      }
       if (!playing || !request) return;
       t += dt;
-      if (t >= FLASH_AT) toStage();
+      if (t >= FLASH_AT && !onStage) {
+        enterStage();
+        buildDisplay(request, true);
+      }
       if (t >= (dense ? DENSE_END : END)) {
         finish();
         return;
       }
       if (!onStage || !fishModel) return;
       const time = t;
-      fishModel.update(time, time * 6);
 
       if (dense) {
         // A tiny glowing fish drops onto the dock… and the dock snaps.
@@ -406,6 +536,7 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
         const fishY = broke ? Math.max(-0.5, 0.95 - after * after * 6) : 4 - 3.05 * fall * fall;
         fishModel.root.position.set(0, fishY, 0.1);
         fishModel.root.rotation.y = Math.PI + time * 3;
+        animateFish(time);
         if (dock) {
           const snap = broke ? Math.min(1, after * 2.5) : 0;
           dock.left.rotation.z = -0.9 * snap;
@@ -416,6 +547,10 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
         catcher?.plane.position.set(STAGE.x + 1.1, STAGE.y + 0.9 + 0.95 - (broke ? Math.min(1, after * 2) * 0.8 : 0), STAGE.z + 0.25);
         catcher?.update(camera, time);
         splash(new Vector3(0, 0, 0.1), broke ? after - 0.15 : -1, 1.2);
+        if (broke && !splashed) {
+          splashed = true;
+          stopSplash = splashBurst(scene, world(new Vector3(0, 0, 0.1)), 1.2);
+        }
         const shake = broke && after < 0.7 ? (0.7 - after) * 0.06 : 0;
         camera.target.copyFrom(world(new Vector3(0.3, 1.2, 0)));
         camera.alpha = Math.PI / 2 + 0.35 + Math.sin(time * 61) * shake;
@@ -426,44 +561,43 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
 
       // Rise: the fish bursts out of the water and hangs there, turning slowly.
       const rise = ease((t - FLASH_AT - 0.15) / (RISE_END - FLASH_AT - 0.3));
-      const pos = new Vector3(fishHover.x, -FISH_UNITS * 0.6 + (fishHover.y + FISH_UNITS * 0.6) * easeOutBack(rise), fishHover.z);
-      fishModel.root.position.copyFrom(pos);
-      fishModel.root.scaling.setAll(FISH_UNITS);
+      const depth = fishUnits * 0.6 + 0.3;
+      fishModel.root.position.set(fishHover.x, -depth + (fishHover.y + depth) * easeOutBack(rise), fishHover.z);
+      fishModel.root.scaling.setAll(fishUnits);
       fishModel.root.rotation.y = Math.PI + Math.sin(time * 0.8) * 0.35;
       fishModel.root.rotation.z = 0.25 * (1 - rise) + Math.sin(time * 1.3) * 0.05;
-      splash(new Vector3(0, 0, 0), t - FLASH_AT - 0.2, FISH_UNITS * 0.5);
+      animateFish(time);
+      splash(new Vector3(0, 0, 0), t - FLASH_AT - 0.2, Math.max(fishUnits, 0.6) * 0.5);
+      if (!splashed && t >= FLASH_AT + 0.2) {
+        splashed = true;
+        stopSplash = splashBurst(scene, world(Vector3.Zero()), Math.max(fishUnits, 0.6));
+      }
 
       // Scale references pop in while the camera dollies back.
       for (const r of refs) {
         const s = Math.max(0, Math.min(1, (t - r.appearAt) / 0.45));
         r.scale = s > 0 ? easeOutBack(s) : 0;
-        r.node.scaling.setAll(Math.max(0.0001, r.height * r.scale));
-        if (r.sprite) {
-          // Sprites are authored in metres (1.9 m tall); scale to the reference's height.
-          const k = r.height / 1.8;
-          r.sprite.setScale(Math.max(0.0001, k * r.scale));
-          r.sprite.update(camera, time);
-          r.sprite.plane.position.copyFrom(world(r.node.position).add(new Vector3(0, 0.95 * k * r.scale, 0)));
-        }
       }
+      placeRefs(time);
 
       const dolly = ease((t - RISE_END) / (DOLLY_END - RISE_END));
       const radius = closeRadius * Math.pow(farRadius / closeRadius, dolly);
       Vector3.LerpToRef(world(fishHover), world(farTarget), dolly, camera.target);
-      camera.alpha = Math.PI / 2 - 0.12;
+      camera.alpha = Math.PI / 2 - 0.12 + dolly * 0.2;
       camera.beta = 1.5 - dolly * 0.12;
       camera.radius = radius;
     },
 
     labels(cssScale) {
-      if (!onStage || dense) return [];
+      if (!onStage || (playing && dense)) return [];
       const engine = scene.getEngine();
       const w = engine.getRenderWidth();
       const h = engine.getRenderHeight();
       const viewport = camera.viewport.toGlobal(w, h);
       const transform = scene.getTransformMatrix();
       return refs.map((r) => {
-        const p = Vector3.Project(world(r.node.position).add(new Vector3(0, r.height * r.scale + 0.05, 0)), Matrix.IdentityReadOnly, transform, viewport);
+        const top = r.key === "human" ? r.height * 1.12 : r.height;
+        const p = Vector3.Project(world(r.node.position).add(new Vector3(0, top * r.scale + 0.05, 0)), Matrix.IdentityReadOnly, transform, viewport);
         return { key: r.key, x: p.x * cssScale, y: p.y * cssScale, visible: r.scale > 0.6 && p.z > 0 && p.z < 1 };
       });
     },

@@ -13,7 +13,6 @@ import "@babylonjs/core/PostProcesses/RenderPipeline/postProcessRenderPipelineMa
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import { createBoat } from "./boat";
 import { createRaft } from "./raft";
-import { createShowcase, type TankOwner } from "./showcase";
 import { createReveal, type Reveal, type RevealRequest } from "./reveal";
 import { createCrew, type Crew, type CrewMember } from "./crew";
 import { createBeach, createDock, createSea, createSky, DOCK_END, DOCK_TOP, HORIZON } from "./seaside";
@@ -28,8 +27,8 @@ export interface PondScene {
   focusOverview(): void;
   /** Fly the camera to one fisher (no-op if they aren't out fishing). */
   focusOn(userId: string): void;
-  /** Show someone's catch swimming in the fish tank and fly there; null hides it. */
-  showTank(owner: TankOwner | null): void;
+  /** Show one fish at true scale on the stage (round summary); null returns to the bay. */
+  showExhibit(request: RevealRequest | null): void;
   /** Play the big-catch reveal; `onDone` runs when it ends (or is aborted). */
   playReveal(request: RevealRequest, onDone: () => void): void;
   abortReveal(): void;
@@ -52,8 +51,6 @@ const CLOSE_RADIUS = 5.5;
 const CLOSE_BETA = 1.28;
 const CLOSE_SIDE = 0.6;
 const FLY_SEC = 0.9;
-/** Director target meaning "the fish tank" rather than a fisher. */
-const TANK = "\u0000tank";
 
 /**
  * HD-2D seaside: low-poly 3D world with pixel textures, pixel-art fishers (one per active viewer,
@@ -124,8 +121,6 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     ] as const
   ).map(([x, z, heading], i) => createRaft(scene, shadows, new Vector3(x, 0, z), heading, i));
   const crew = createCrew(scene, engine, shadows, boat, rafts, host);
-  // Fish tank on the beach behind the dock, shown during the round summary.
-  const showcase = createShowcase(scene, shadows, -1.5, -24);
   const reveal = createReveal(scene, camera);
 
   // HD-2D post stack: tilt-shift DOF, bloom, vignette, grain.
@@ -156,7 +151,6 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   };
   const desiredPose = (): CameraPose | null => {
     if (focused === null) return OVERVIEW;
-    if (focused === TANK) return showcase.cameraPose();
     const who = crew.tour().find((t) => t.userId === focused);
     if (!who) return null;
     // ArcRotate puts the camera at (cos α, sin α) around the target; face the fisher from the front, a bit to the side.
@@ -170,16 +164,6 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     const next = i + step;
     focused = next < 0 || next >= ids.length ? null : ids[next]!;
     startFly();
-  };
-  const showTank = (owner: TankOwner | null): void => {
-    showcase.show(owner);
-    if (owner && focused !== TANK) {
-      focused = TANK;
-      startFly();
-    } else if (!owner && focused === TANK) {
-      focused = null;
-      startFly();
-    }
   };
   const playReveal = (request: RevealRequest, onDone: () => void): void => {
     const before = focused;
@@ -216,7 +200,6 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     // Waves at half rate: the CPU-side facet update is the scene's biggest per-frame cost.
     if (frame++ % 2 === 0) sea.update(time);
     crew.update(camera, time, dt);
-    showcase.update(camera, time);
     reveal.update(dt);
 
     if (reveal.ownsCamera()) {
@@ -255,11 +238,14 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     focusStep,
     focusOverview,
     focusOn,
-    showTank,
+    showExhibit: (request) => {
+      reveal.exhibit(request);
+      if (!request) startFly(); // glide back from where the stage left the camera
+    },
     playReveal,
     abortReveal: () => reveal.abort(),
     reveal,
-    focusedId: () => (focused === TANK ? null : focused),
+    focusedId: () => focused,
   };
 }
 

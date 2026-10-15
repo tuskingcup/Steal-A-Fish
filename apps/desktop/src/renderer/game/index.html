@@ -55,15 +55,17 @@
     #summary .bhead .bname { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #summary .arrow { color: #FFC23D; font-size: 22px; }
     #summary .stats { font-size: 13px; color: #9FE3E6; text-align: center; margin: 2px 0 6px; }
-    #summary .fish { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; border-top: 1px solid #2D6E8455; }
-    #summary .fish .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #summary .fish .fname small { color: #9FE3E6; margin-left: 6px; font-size: 12px; }
-    #summary .fish .fw { font-weight: 700; font-variant-numeric: tabular-nums; }
+    #summary .exfish { text-align: center; padding: 4px 0 2px; border-top: 1px solid #2D6E8455; }
+    #summary .exname { font-size: 22px; font-weight: 800; text-shadow: 0 2px 6px #000A; }
+    #summary .exnums { display: flex; justify-content: center; gap: 14px; font-size: 15px; color: #DFF6F7; margin-top: 2px; }
+    #summary .exprice { font-size: 17px; font-weight: 700; margin-top: 2px; }
+    #summary .exprice small { color: #9FE3E6; font-size: 12px; font-weight: 400; margin-left: 10px; }
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
     body.in-summary #feed, body.in-summary #joinhint { display: none; }
 
     /* Big-catch reveal */
     body.revealing #feed, body.revealing #joinhint, body.revealing #tags, body.revealing #card { display: none; }
+    body.exhibiting #tags, body.exhibiting #card { display: none; }
     #reveal { position: fixed; left: 50%; transform: translateX(-50%); width: 86%; max-width: 460px; text-align: center; pointer-events: none; display: none; }
     #reveal.hook { display: block; top: 30%; animation: pop .3s cubic-bezier(.2,1.6,.4,1); }
     #reveal.hook .big { font-size: 64px; font-weight: 900; color: #FFC23D; text-shadow: 0 4px 0 #0009, 0 0 24px var(--rc); letter-spacing: 2px; }
