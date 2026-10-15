@@ -6,6 +6,12 @@ const SAMPLE_VIEWERS: Viewer[] = [
   { userId: "sim-2", uniqueId: "mek_za", nickname: "Mek" },
   { userId: "sim-3", uniqueId: "boss_fishing", nickname: "Boss" },
   { userId: "sim-4", uniqueId: "jj_99", nickname: "JJ" },
+  { userId: "sim-5", uniqueId: "pla_too", nickname: "ปลาทู" },
+  { userId: "sim-6", uniqueId: "auntie_noi", nickname: "ป้าน้อย" },
+  { userId: "sim-7", uniqueId: "kao_niao", nickname: "ข้าวเหนียว" },
+  { userId: "sim-8", uniqueId: "captain_tum", nickname: "กัปตันตั้ม" },
+  { userId: "sim-9", uniqueId: "mint.chan", nickname: "Mint" },
+  { userId: "sim-10", uniqueId: "lung_dam", nickname: "ลุงดำ" },
 ];
 
 /**

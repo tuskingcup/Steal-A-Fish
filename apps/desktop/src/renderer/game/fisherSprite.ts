@@ -8,15 +8,16 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Material } from "@babylonjs/core/Materials/material";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { avatarKey, type Avatar } from "@saf/core";
 
 /**
  * HD-2D fisher: a pixel-art billboard that looks right from every side.
  *
- * Instead of hand-drawing each view, the character is described once as a small set of
- * signed-distance shapes (local space: +z faces the sea, origin = seat on the dock) and baked
- * at load into a 48×56 toon-shaded, outlined pixel sprite for each of 16 view directions.
- * At runtime the billboard picks the frame matching the camera's angle around the fisher,
- * so orbiting the camera shows the front, sides and back like a sprite sheet would.
+ * Instead of hand-drawing each view, a character is described as a small set of signed-distance
+ * shapes built from its Avatar (local space: +z faces the water, origin = seat on the dock edge)
+ * and baked into a 48×56 toon-shaded, outlined pixel frame per view direction. Frames are baked
+ * lazily the first time a direction is seen and cached per look, so viewers who share a look
+ * share textures. The billboard shows the frame matching the camera's angle around the fisher.
  */
 
 const FRAME_W = 48;
@@ -25,36 +26,29 @@ const FRAME_H = 56;
 export const SPRITE_PX = 0.035;
 const DIRECTIONS = 16;
 const POSES = 2;
-/** Bake with a slight downward look so the hat brim reads; the billboard itself stays vertical. */
+/** Bake with a slight downward look so hat brims read; the billboard itself stays vertical. */
 const BAKE_PITCH = 0.17;
 
 type V3 = readonly [number, number, number];
+type Rgb = [number, number, number];
 
 /**
  * Billboard centre in fisher-local space. It sits just past the dock edge (local z 0.2) so the
  * dangling legs aren't hidden by the dock from the front, and just in front of the hands so the
  * 3D rod is hidden behind the body when seen from behind.
  */
-const PLANE_CENTER: V3 = [0, 0.25, 0.25];
+export const PLANE_CENTER: V3 = [0, 0.25, 0.25];
 /** Where the hands grip the rod, fisher-local. The 3D rod starts here. */
 export const HAND_LOCAL: V3 = [0.05, 0.36, 0.3];
+/** Above the hat, for the name tag. */
+export const HEAD_TOP_LOCAL: V3 = [0, 1.18, 0.05];
 
-const PALETTE = {
-  skin: "#F2C194",
-  hair: "#2A1E18",
-  eye: "#1B1410",
-  blush: "#F08C7C",
-  shirt: "#EDE6D3",
-  scarf: "#D2453B",
-  pants: "#34488A",
-  sandal: "#6B4226",
-  hat: "#E8C273",
-  outline: "#1E1424",
-} as const;
+const OUTLINE = hexRgb("#1E1424");
+const STRAW = "#E8C273";
 
 interface Prim {
   sdf: (x: number, y: number, z: number) => number;
-  rgb: [number, number, number];
+  color: (x: number, y: number, z: number) => Rgb;
   /** Prims in the same group don't draw inner outlines against each other. */
   group: number;
 }
@@ -62,23 +56,35 @@ interface Prim {
 export interface FisherSprite {
   plane: Mesh;
   update(camera: Camera, timeSec: number): void;
+  dispose(): void;
 }
 
-export function createFisherSprite(scene: Scene, origin: Vector3): FisherSprite {
-  const frames: DynamicTexture[][] = [];
-  for (let pose = 0; pose < POSES; pose++) {
-    const prims = buildPrims(pose);
-    const row: DynamicTexture[] = [];
-    for (let dir = 0; dir < DIRECTIONS; dir++) row.push(bakeFrame(scene, prims, (dir / DIRECTIONS) * Math.PI * 2, `fisher_${pose}_${dir}`));
-    frames.push(row);
-  }
+const frameCache = new WeakMap<Scene, Map<string, (DynamicTexture | undefined)[]>>();
+
+/**
+ * @param seat  world position of the seat (dock edge)
+ * @param yaw   facing: 0 = +z, π/2 = +x
+ */
+export function createFisherSprite(scene: Scene, avatar: Avatar, seat: Vector3, yaw: number, phase = 0): FisherSprite {
+  let perScene = frameCache.get(scene);
+  if (!perScene) frameCache.set(scene, (perScene = new Map()));
+  const key = avatarKey(avatar);
+  let frames = perScene.get(key);
+  if (!frames) perScene.set(key, (frames = new Array<DynamicTexture | undefined>(POSES * DIRECTIONS)));
+  const poses = Array.from({ length: POSES }, (_, p) => buildPrims(avatar, p));
+  const cached = frames;
+
+  const frame = (pose: number, dir: number): DynamicTexture => {
+    const i = pose * DIRECTIONS + dir;
+    return (cached[i] ??= bakeFrame(scene, poses[pose]!, (dir / DIRECTIONS) * Math.PI * 2, `fisher_${key}_${i}`));
+  };
 
   const plane = CreatePlane("fisher", { width: FRAME_W * SPRITE_PX, height: FRAME_H * SPRITE_PX }, scene);
-  plane.position = origin.add(new Vector3(...PLANE_CENTER));
+  plane.position = seat.add(rotateY(PLANE_CENTER, yaw));
   plane.billboardMode = Mesh.BILLBOARDMODE_Y;
 
-  // Lighting is baked into the pixels (toon ramp from the sun's side), so the sprite is unlit;
-  // otherwise its brightness would change as the billboard turns with the camera.
+  // Lighting is baked into the pixels, so the sprite is unlit; otherwise its brightness would
+  // change as the billboard turns with the camera.
   const mat = new StandardMaterial("fisherMat", scene);
   mat.disableLighting = true;
   mat.diffuseColor = Color3.Black();
@@ -91,32 +97,47 @@ export function createFisherSprite(scene: Scene, origin: Vector3): FisherSprite 
   plane.material = mat;
 
   let current: DynamicTexture | null = null;
-  const show = (tex: DynamicTexture): void => {
-    if (tex === current) return;
-    current = tex;
-    mat.diffuseTexture = tex;
-    mat.emissiveTexture = tex;
-  };
-
   return {
     plane,
     update(camera, timeSec) {
       const v = camera.globalPosition.subtract(plane.position);
-      const angle = Math.atan2(v.x, v.z);
       const step = (Math.PI * 2) / DIRECTIONS;
+      const angle = Math.atan2(v.x, v.z) - yaw;
       const dir = (((Math.round(angle / step)) % DIRECTIONS) + DIRECTIONS) % DIRECTIONS;
-      const pose = Math.floor(timeSec * 1.6) % POSES;
-      show(frames[pose]![dir]!);
+      const pose = Math.floor(timeSec * 1.6 + phase) % POSES;
+      const tex = frame(pose, dir);
+      if (tex !== current) {
+        current = tex;
+        mat.diffuseTexture = tex;
+        mat.emissiveTexture = tex;
+      }
+    },
+    dispose() {
+      // Textures stay cached for the next viewer with this look.
+      mat.dispose();
+      plane.dispose();
     },
   };
 }
 
+/** Rotate a fisher-local point by the seat's yaw (same convention as Babylon's rotation.y). */
+export function rotateY(p: V3, yaw: number): Vector3 {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return new Vector3(p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c);
+}
+
 // ---------- Character shapes ----------
 
-function buildPrims(pose: number): Prim[] {
-  const P = PALETTE;
+function buildPrims(a: Avatar, pose: number): Prim[] {
   const prims: Prim[] = [];
-  const add = (sdf: Prim["sdf"], hex: string, group: number) => prims.push({ sdf, rgb: hexRgb(hex), group });
+  const add = (sdf: Prim["sdf"], color: string | Prim["color"], group: number) =>
+    prims.push({ sdf, color: typeof color === "string" ? solid(color) : color, group });
+
+  const skin = a.skin;
+  const cloth = topPattern(a);
+  const sleeve = a.top === "tank" ? skin : a.top === "lifeVest" ? a.topAccent : cloth;
+  const forearm = a.top === "longSleeve" ? cloth : skin;
 
   // Legs dangle over the dock edge and swing out of phase.
   for (const side of [-1, 1]) {
@@ -125,35 +146,130 @@ function buildPrims(pose: number): Prim[] {
     const knee: V3 = [0.1 * side, 0.08, 0.36];
     const mid: V3 = [0.1 * side, -0.1, 0.4 + swing * 0.5];
     const ankle: V3 = [0.1 * side, -0.3, 0.42 + swing];
-    add(capsule(hip, knee, 0.085), P.pants, 1);
-    add(capsule(knee, mid, 0.078), P.pants, 1);
-    add(capsule(mid, ankle, 0.058), P.skin, 2);
-    add(roundBox([ankle[0], ankle[1] - 0.05, ankle[2] + 0.05], [0.055, 0.03, 0.1], 0.02), P.sandal, 3);
+    const baggy = a.bottom === "fishermanPants" ? 0.092 : a.bottom === "shorts" ? 0.088 : 0.08;
+    add(capsule(hip, knee, baggy), a.bottomColor, 1);
+    add(capsule(knee, mid, a.bottom === "shorts" ? 0.058 : baggy - 0.006), a.bottom === "shorts" ? skin : a.bottomColor, a.bottom === "shorts" ? 2 : 1);
+    if (a.shoes === "boots") add(capsule(mid, ankle, 0.072), a.shoeColor, 3);
+    else add(capsule(mid, ankle, 0.058), a.bottom === "longPants" ? a.bottomColor : skin, a.bottom === "longPants" ? 1 : 2);
+    const foot: V3 = [ankle[0], ankle[1] - 0.05, ankle[2] + 0.05];
+    if (a.shoes === "barefoot") add(roundBox(foot, [0.05, 0.03, 0.09], 0.025), skin, 2);
+    else add(roundBox(foot, [0.058, a.shoes === "boots" ? 0.04 : 0.028, 0.1], 0.02), a.shoeColor, 3);
   }
-  add(roundBox([0, 0.1, -0.04], [0.18, 0.1, 0.14], 0.06), P.pants, 1);
+  add(roundBox([0, 0.1, -0.04], [0.18, 0.1, 0.14], 0.06), a.bottomColor, 1);
 
-  // Torso, scarf (pha khao ma), head.
-  add(roundBox([0, 0.36, -0.02], [0.17, 0.19, 0.11], 0.07), P.shirt, 4);
-  add(roundBox([0, 0.56, -0.01], [0.15, 0.035, 0.125], 0.03), P.scarf, 5);
-  add(roundBox([0, 0.74, 0.03], [0.15, 0.14, 0.13], 0.07), P.skin, 6);
-  add(roundBox([0, 0.77, -0.03], [0.158, 0.1, 0.12], 0.06), P.hair, 7);
-  for (const side of [-1, 1]) {
-    add(sphere([0.062 * side, 0.75, 0.155], 0.03), P.eye, 8);
-    add(sphere([0.112 * side, 0.7, 0.14], 0.026), P.blush, 6);
-  }
-
-  // Ngob (conical straw hat).
-  add(cappedCone([0, 0.83, 0.02], [0, 1.03, 0.02], 0.32, 0.025), P.hat, 9);
-
-  // Arms reach forward to the rod grip.
+  // Torso and arms.
+  add(roundBox([0, 0.36, -0.02], [0.17, 0.19, 0.11], 0.07), a.top === "lifeVest" ? a.topAccent : cloth, 4);
+  if (a.top === "lifeVest") add(roundBox([0, 0.37, -0.02], [0.185, 0.165, 0.128], 0.06), lifeVest(a.topAccent), 4);
   for (const side of [-1, 1]) {
     const shoulder: V3 = [0.2 * side, 0.5, -0.02];
     const elbow: V3 = [0.23 * side, 0.34, 0.13];
-    add(capsule(shoulder, elbow, 0.058), P.shirt, 4);
-    add(capsule(elbow, HAND_LOCAL, 0.048), P.skin, 10);
+    add(capsule(shoulder, elbow, 0.058), sleeve, a.top === "tank" ? 10 : 4);
+    add(capsule(elbow, HAND_LOCAL, 0.048), forearm, a.top === "longSleeve" ? 4 : 10);
   }
-  add(sphere(HAND_LOCAL, 0.062), P.skin, 10);
+  add(sphere(HAND_LOCAL, 0.062), skin, 10);
+
+  // Neck wear.
+  if (a.neck === "phaKhaoMa") add(roundBox([0, 0.56, -0.01], [0.15, 0.035, 0.125], 0.03), plaid(a.neckColor), 5);
+  if (a.neck === "towel") {
+    add(roundBox([0, 0.56, -0.01], [0.155, 0.04, 0.13], 0.035), a.neckColor, 5);
+    add(roundBox([0.09, 0.44, 0.1], [0.04, 0.1, 0.02], 0.015), a.neckColor, 5);
+  }
+
+  // Head, face, hair.
+  add(roundBox([0, 0.74, 0.03], [0.15, 0.14, 0.13], 0.07), skin, 6);
+  for (const side of [-1, 1]) {
+    const ex = 0.062 * side;
+    if (a.eyes === "dot") add(sphere([ex, 0.75, 0.155], 0.03), "#1B1410", 8);
+    if (a.eyes === "wide") add(capsule([ex, 0.735, 0.155], [ex, 0.775, 0.155], 0.03), "#1B1410", 8);
+    if (a.eyes === "happy") add(capsule([ex - 0.025, 0.75, 0.158], [ex + 0.025, 0.755, 0.158], 0.016), "#1B1410", 8);
+    add(sphere([0.112 * side, 0.7, 0.14], 0.026), "#F08C7C", 6);
+  }
+  if (a.faceExtra === "mustache") add(capsule([-0.05, 0.695, 0.162], [0.05, 0.695, 0.162], 0.02), a.hairColor, 11);
+  if (a.faceExtra === "beard") add(roundBox([0, 0.655, 0.07], [0.152, 0.065, 0.1], 0.05), a.hairColor, 11);
+  if (a.faceExtra === "sunglasses") add(roundBox([0, 0.755, 0.168], [0.135, 0.032, 0.018], 0.012), "#16161C", 12);
+  if (a.faceExtra === "glasses") {
+    for (const side of [-1, 1]) add(ringZ([0.062 * side, 0.752, 0.172], 0.04, 0.011), "#2B2B33", 12);
+  }
+
+  const hatCoversTop = a.hat !== "none";
+  if (a.hairStyle !== "bald") {
+    add(roundBox([0, 0.77, -0.03], [0.158, 0.1, 0.12], 0.06), a.hairColor, 7);
+    if (!hatCoversTop || a.hat === "bandana") add(roundBox([0, 0.84, 0.0], [0.16, 0.06, 0.142], 0.05), a.hairColor, 7);
+    if (a.hairStyle === "long") add(roundBox([0, 0.62, -0.07], [0.165, 0.2, 0.09], 0.06), a.hairColor, 7);
+    if (a.hairStyle === "bun") add(sphere([0, a.hat === "none" ? 0.93 : 0.8, -0.16], 0.075), a.hairColor, 7);
+    if (a.hairStyle === "spiky" && (a.hat === "none" || a.hat === "bandana")) {
+      for (const [x, z] of [[-0.08, 0], [0.08, 0], [0, -0.06], [0, 0.07]] as const)
+        add(cappedCone([x, 0.86, z], [x * 1.4, 1.0, z * 1.4 - 0.03], 0.06, 0.01), a.hairColor, 7);
+    }
+  }
+
+  // Hats.
+  switch (a.hat) {
+    case "ngob":
+      add(cappedCone([0, 0.83, 0.02], [0, 1.03, 0.02], 0.32, 0.025), STRAW, 9);
+      break;
+    case "cap":
+      add(intersect(sphere([0, 0.82, 0.02], 0.168), (_x, y) => 0.83 - y), a.hatColor, 9);
+      add(roundBox([0, 0.84, 0.19], [0.12, 0.012, 0.075], 0.01), a.hatColor, 9);
+      break;
+    case "bucket":
+      add(cappedCone([0, 0.82, 0.02], [0, 0.97, 0.02], 0.19, 0.16), a.hatColor, 9);
+      add(cappedCone([0, 0.8, 0.02], [0, 0.83, 0.02], 0.26, 0.23), a.hatColor, 9);
+      break;
+    case "strawWide": {
+      const band = (x: number, y: number, z: number): Rgb => (y < 0.87 && y > 0.83 ? hexRgb(a.hatColor) : solid(STRAW)(x, y, z));
+      add(cappedCone([0, 0.83, 0.02], [0, 0.98, 0.02], 0.17, 0.15), band, 9);
+      add(cappedCone([0, 0.815, 0.02], [0, 0.835, 0.02], 0.4, 0.37), STRAW, 9);
+      break;
+    }
+    case "bandana":
+      add(roundBox([0, 0.83, 0.0], [0.166, 0.075, 0.148], 0.06), dots(a.hatColor, "#F4F1E8"), 9);
+      add(sphere([0, 0.8, -0.17], 0.045), a.hatColor, 9);
+      break;
+    case "none":
+      break;
+  }
   return prims;
+}
+
+// ---------- Cloth patterns (fisher-local coordinates) ----------
+
+function topPattern(a: Avatar): Prim["color"] {
+  const base = hexRgb(a.topColor);
+  const accent = hexRgb(a.topAccent);
+  if (a.top === "striped") return (_x, y) => (Math.floor(y / 0.06) % 2 === 0 ? base : accent);
+  if (a.top === "hawaiian") return (x, y, z) => (cellHash(x, y, z, 0.055) > 0.7 ? accent : base);
+  return () => base;
+}
+
+function lifeVest(shirt: string): Prim["color"] {
+  const orange = hexRgb("#F28C28");
+  const reflect = hexRgb("#F2F2E8");
+  const under = hexRgb(shirt);
+  return (x, y, z) => (z > 0.05 && Math.abs(x) < 0.04 ? under : Math.abs(y - 0.3) < 0.02 ? reflect : orange);
+}
+
+function plaid(color: string): Prim["color"] {
+  const c = hexRgb(color);
+  const white = hexRgb("#F1ECE0");
+  const mid: Rgb = [(c[0] + white[0]) / 2, (c[1] + white[1]) / 2, (c[2] + white[2]) / 2];
+  return (x, _y, z) => {
+    const a = Math.floor((x + z) / 0.05) % 2 === 0;
+    const b = Math.floor((x - z) / 0.05) % 2 === 0;
+    return a && b ? c : a || b ? mid : white;
+  };
+}
+
+function dots(color: string, dot: string): Prim["color"] {
+  const c = hexRgb(color);
+  const d = hexRgb(dot);
+  return (x, y, z) => (cellHash(x, y, z, 0.05) > 0.78 ? d : c);
+}
+
+function cellHash(x: number, y: number, z: number, size: number): number {
+  const n = Math.floor(x / size) * 73.1 + Math.floor(y / size) * 157.3 + Math.floor(z / size) * 311.7;
+  const h = Math.sin(n) * 43758.5453;
+  return h - Math.floor(h);
 }
 
 // ---------- Baker ----------
@@ -215,7 +331,7 @@ function bakeFrame(scene: Scene, prims: Prim[], azimuth: number, name: string): 
           const ndl = n[0]! * light[0]! + n[1]! * light[1]! + n[2]! * light[2]!;
           // Three-step toon ramp with cool shadows, the usual pixel-art shading.
           const tone = ndl > 0.45 ? [1.04, 1.02, 0.98] : ndl > -0.05 ? [0.86, 0.86, 0.9] : [0.64, 0.66, 0.8];
-          const base = prims[idx]!.rgb;
+          const base = prims[idx]!.color(px, py, pz);
           for (let c = 0; c < 3; c++) rgb[k * 3 + c] = Math.min(1, base[c]! * tone[c]!);
           break;
         }
@@ -228,7 +344,6 @@ function bakeFrame(scene: Scene, prims: Prim[], azimuth: number, name: string): 
   tex.hasAlpha = true;
   const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
   const img = ctx.createImageData(W, H);
-  const outline = hexRgb(PALETTE.outline);
   const filled = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && prim[y * W + x]! >= 0;
 
   for (let y = 0; y < H; y++) {
@@ -238,9 +353,9 @@ function bakeFrame(scene: Scene, prims: Prim[], azimuth: number, name: string): 
       if (prim[k]! < 0) {
         // Outer outline: empty pixel touching the silhouette.
         if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) {
-          img.data[o] = outline[0] * 255;
-          img.data[o + 1] = outline[1] * 255;
-          img.data[o + 2] = outline[2] * 255;
+          img.data[o] = OUTLINE[0] * 255;
+          img.data[o + 1] = OUTLINE[1] * 255;
+          img.data[o + 2] = OUTLINE[2] * 255;
           img.data[o + 3] = 255;
         }
         continue;
@@ -289,6 +404,18 @@ function roundBox(c: V3, half: V3, rad: number): Prim["sdf"] {
   };
 }
 
+/** Ring facing +z (glasses rims). */
+function ringZ(c: V3, rad: number, thickness: number): Prim["sdf"] {
+  return (x, y, z) => {
+    const q = Math.hypot(x - c[0], y - c[1]) - rad;
+    return Math.hypot(q, z - c[2]) - thickness;
+  };
+}
+
+function intersect(a: Prim["sdf"], b: Prim["sdf"]): Prim["sdf"] {
+  return (x, y, z) => Math.max(a(x, y, z), b(x, y, z));
+}
+
 function cappedCone(a: V3, b: V3, ra: number, rb: number): Prim["sdf"] {
   const rba = rb - ra;
   const bax = b[0] - a[0], bay = b[1] - a[1], baz = b[2] - a[2];
@@ -309,6 +436,11 @@ function cappedCone(a: V3, b: V3, ra: number, rb: number): Prim["sdf"] {
   };
 }
 
+function solid(hex: string): Prim["color"] {
+  const c = hexRgb(hex);
+  return () => c;
+}
+
 function normalize(v: number[]): number[] {
   const l = Math.hypot(v[0]!, v[1]!, v[2]!) || 1;
   return [v[0]! / l, v[1]! / l, v[2]! / l];
@@ -318,7 +450,7 @@ function cross(a: number[], b: number[]): number[] {
   return [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
 }
 
-function hexRgb(hex: string): [number, number, number] {
+function hexRgb(hex: string): Rgb {
   const n = parseInt(hex.slice(1), 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }

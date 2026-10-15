@@ -5,6 +5,7 @@ export const th = {
   gameTitle: "STEAL A FISH",
   pondVillage: "บ่อหมู่บ้าน",
   waiting: "รอของขวัญจากคนดู…",
+  hostName: "เจ้าของท่าเรือ",
 
   settingsTitle: "ตั้งค่า Steal A Fish",
   connection: "เชื่อมต่อไลฟ์",

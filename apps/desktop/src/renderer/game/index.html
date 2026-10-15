@@ -14,11 +14,15 @@
     #feed { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
     .item { background: #071C29E6; border: 2px solid #2D6E84; border-radius: 12px; padding: 8px 12px; font-size: 14px; animation: in .25s ease-out; }
     .item b { color: #FFC23D; font-weight: 600; }
+    #tags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    .tag { position: absolute; left: 0; top: 0; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #071C29CC; border: 2px solid #2D6E84; }
+    .tag.host { color: #FFC23D; border-color: #FFC23D; }
     @keyframes in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
   </style>
 </head>
 <body>
   <canvas id="scene"></canvas>
+  <div id="tags"></div>
   <div id="hud">
     <div id="title"></div>
     <div id="pond"></div>

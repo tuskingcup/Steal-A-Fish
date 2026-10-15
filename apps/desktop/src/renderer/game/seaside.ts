@@ -453,18 +453,4 @@ export function createDock(scene: Scene, shadows: ShadowGenerator): void {
   const cap = CreateCylinder("lanternCap", { diameterTop: 0, diameterBottom: 0.28, height: 0.12, tessellation: 4 }, scene);
   cap.position = new Vector3(-1.1, DOCK_TOP + 0.73, DOCK_END - 0.1);
   cap.material = lowPolyMat(scene, "#3A2A20");
-
-  // Bucket with today's catch.
-  const bucket = CreateCylinder("bucket", { diameterTop: 0.36, diameterBottom: 0.28, height: 0.34, tessellation: 10 }, scene);
-  bucket.position = new Vector3(0.75, DOCK_TOP + 0.17, DOCK_END - 0.75);
-  bucket.material = lowPolyMat(scene, "#3E7CB1");
-  shadows.addShadowCaster(bucket);
-  const water = CreateCylinder("bucketWater", { diameter: 0.32, height: 0.02, tessellation: 10 }, scene);
-  water.position = new Vector3(0.75, DOCK_TOP + 0.31, DOCK_END - 0.75);
-  water.material = lowPolyMat(scene, "#2C6E8F");
-  const tail = CreateCylinder("fishTail", { diameterTop: 0.2, diameterBottom: 0, height: 0.2, tessellation: 3 }, scene);
-  tail.position = new Vector3(0.78, DOCK_TOP + 0.42, DOCK_END - 0.72);
-  tail.rotation.z = 0.4;
-  tail.scaling.z = 0.25;
-  tail.material = lowPolyMat(scene, "#FF8A3D");
 }
