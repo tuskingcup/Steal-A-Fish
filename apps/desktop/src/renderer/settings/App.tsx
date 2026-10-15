@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, type RoundState } from "@saf/core";
+import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, speciesPercents, type RoundState } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
 import { describeAction, describeEvent, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../shared/strings.th";
 
 /** Public drop table (shown to everyone: no hidden odds). */
 const PERCENTS = rarityPercents();
+const speciesChance = speciesPercents();
 const fmtPct = (p: number) => (p >= 1 ? p.toFixed(1) : p >= 0.01 ? p.toFixed(2) : p.toFixed(3));
 
 // Placeholder gifts for the simulator. Real ids come from the live gift list later.
@@ -180,7 +181,7 @@ export function App() {
                   {speciesTh[sp.id] ?? sp.id} · {rarityTh[sp.rarity]}
                 </td>
                 <td>
-                  ~{formatWeight(sp.baseLog10)} · {sp.price.toLocaleString("th-TH")} {th.coinsUnit}
+                  ~{formatWeight(sp.baseLog10)} · {sp.price.toLocaleString("th-TH")} {th.coinsUnit} · {fmtPct(speciesChance[sp.id] ?? 0)}%
                 </td>
               </tr>
             ))}

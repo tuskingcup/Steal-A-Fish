@@ -17,6 +17,8 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import type { MutationId } from "@saf/core";
 import { hash01 } from "./materials";
+import { finMesh, hexRgb, mix, paintFaces, rod, sideFin, smooth, solidPaint, tailTris, type Rgb, type Tail } from "./modelKit";
+import { CREATURES, type CreatureTemplate } from "./creatures";
 
 /**
  * Low-poly fish, one model per species, built from parameters that give each species its own
@@ -27,8 +29,6 @@ import { hash01 } from "./materials";
  * long; scale them to size. Mutations are materials (the rarest one decides the look).
  */
 
-type Rgb = [number, number, number];
-type Tail = "fork" | "round" | "fan" | "long" | "shark";
 type Dorsal = "spiny" | "long" | "sail" | "small" | "rear";
 type Anal = "short" | "long" | "ribbon" | "rear";
 type Pattern = "none" | "bars" | "spots" | "bands" | "scales" | "diagonal" | "ocelli" | "stripe";
@@ -75,112 +75,6 @@ const LOOKS: Record<string, FishLook> = {
 };
 
 const FALLBACK = LOOKS.tilapia!;
-
-const hexRgb = (hex: string): Rgb => {
-  const c = Color3.FromHexString(hex);
-  return [c.r, c.g, c.b];
-};
-const mix = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-const smooth = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
-/** Colour each flat-shaded triangle from its centroid (crisp low-poly look). */
-function paintFaces(mesh: Mesh, color: (cx: number, cy: number, cz: number) => Rgb): void {
-  const pos = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-  const colors = new Float32Array((pos.length / 3) * 4);
-  for (let v = 0; v < pos.length / 3; v += 3) {
-    const cx = (pos[v * 3]! + pos[v * 3 + 3]! + pos[v * 3 + 6]!) / 3;
-    const cy = (pos[v * 3 + 1]! + pos[v * 3 + 4]! + pos[v * 3 + 7]!) / 3;
-    const cz = (pos[v * 3 + 2]! + pos[v * 3 + 5]! + pos[v * 3 + 8]!) / 3;
-    const c = color(cx, cy, cz);
-    for (let k = 0; k < 3; k++) colors.set([c[0], c[1], c[2], 1], (v + k) * 4);
-  }
-  mesh.setVerticesData(VertexBuffer.ColorKind, colors);
-}
-
-const solidPaint = <T extends Mesh>(mesh: T, hex: string): T => {
-  mesh.convertToFlatShadedMesh();
-  const c = hexRgb(hex);
-  paintFaces(mesh, () => c);
-  return mesh;
-};
-
-/** Flat triangle-list mesh from points in the x/y plane at z (fins). */
-function finMesh(scene: Scene, name: string, tris: [number, number][][], z: number, hex: string): Mesh {
-  const positions: number[] = [];
-  for (const tri of tris) for (const [x, y] of tri) positions.push(x, y, z);
-  const mesh = new Mesh(name, scene);
-  const data = new VertexData();
-  data.positions = positions;
-  data.indices = Array.from({ length: positions.length / 3 }, (_, i) => i);
-  const normals: number[] = [];
-  VertexData.ComputeNormals(positions, data.indices, normals);
-  data.normals = normals;
-  data.uvs = new Array((positions.length / 3) * 2).fill(0); // merging needs matching attributes
-  data.applyToMesh(mesh);
-  return solidPaint(mesh, hex);
-}
-
-/** A thin rod from a to b (whiskers, feelers, spines). */
-function rod(scene: Scene, a: Vector3, b: Vector3, thickness: number, hex: string): Mesh {
-  const len = Vector3.Distance(a, b);
-  const m = CreateBox("rod", { width: len, height: thickness, depth: thickness }, scene);
-  const d = b.subtract(a);
-  m.position = a.add(b).scale(0.5);
-  m.rotation.y = Math.atan2(-d.z, d.x);
-  m.rotation.z = Math.atan2(d.y, Math.hypot(d.x, d.z));
-  m.bakeCurrentTransformIntoVertices();
-  return solidPaint(m, hex);
-}
-
-/**
- * Tail fin around the pivot (x = 0), with a base `b` tall that reaches forward into the body
- * (x > 0) so the tail never looks detached while it wiggles.
- */
-/**
- * A paired fin rooted at `at`, swept back along -x and tilted out from the body by `splay`
- * (0 = flat against the flank, π/2 = straight down/out).
- */
-function sideFin(scene: Scene, name: string, at: Vector3, side: number, splay: number, len: number, hex: string): Mesh {
-  const fin = finMesh(scene, name, [[[0.03, 0.012], [-len, -len * 0.25], [-len * 0.55, -len * 0.55]], [[0.03, 0.012], [-len * 0.55, -len * 0.55], [0.0, -0.02]]], 0, hex);
-  fin.rotation.x = side * splay;
-  fin.position = at;
-  fin.bakeCurrentTransformIntoVertices();
-  return fin;
-}
-
-function tailTris(kind: Tail, h: number, b: number): [number, number][][] {
-  const s = h * 0.95;
-  const base: [number, number][][] = [
-    [[0.07, b], [0, b], [0, -b]],
-    [[0.07, b], [0, -b], [0.07, -b]],
-  ];
-  const lobes = (upTip: [number, number], notch: [number, number], downTip: [number, number]): [number, number][][] => [
-    [[0, b], upTip, notch],
-    [[0, b], notch, [0, -b]],
-    [[0, -b], notch, downTip],
-  ];
-  switch (kind) {
-    case "fork":
-      return [...base, ...lobes([-0.32, s], [-0.17, 0], [-0.32, -s])];
-    case "shark":
-      return [...base, ...lobes([-0.3, s * 1.25], [-0.15, 0], [-0.24, -s * 0.85])];
-    case "fan":
-      return [...base, ...lobes([-0.26, s * 0.9], [-0.3, 0], [-0.26, -s * 0.9])];
-    case "long":
-      return [...base, ...lobes([-0.45, s * 0.4], [-0.4, 0], [-0.45, -s * 0.4])];
-    case "round":
-      return [
-        ...base,
-        [[0, b], [-0.2, s * 0.7], [-0.26, s * 0.3]],
-        [[0, b], [-0.26, s * 0.3], [0, -b]],
-        [[0, -b], [-0.26, s * 0.3], [-0.26, -s * 0.3]],
-        [[0, -b], [-0.26, -s * 0.3], [-0.2, -s * 0.7]],
-      ];
-  }
-}
 
 /** Taper of the body cross-section along its length (thick middle, thin tail, blunt head). */
 function bodyTaper(look: FishLook, x: number): number {
@@ -259,19 +153,20 @@ function analTris(look: FishLook): [number, number][][] {
   }
 }
 
-interface SpeciesModel {
-  body: Mesh;
-  tail: Mesh;
-}
+const modelCache = new WeakMap<Scene, Map<string, CreatureTemplate>>();
 
-const modelCache = new WeakMap<Scene, Map<string, SpeciesModel>>();
-
-/** Hidden per-species source meshes (body + separately animated tail). */
-function speciesModel(scene: Scene, speciesId: string): SpeciesModel {
+/** Hidden per-species source meshes: a static body and moving parts (tails, jaws, legs). */
+function speciesModel(scene: Scene, speciesId: string): CreatureTemplate {
   let perScene = modelCache.get(scene);
   if (!perScene) modelCache.set(scene, (perScene = new Map()));
   const hit = perScene.get(speciesId);
   if (hit) return hit;
+  const creature = CREATURES[speciesId];
+  if (creature) {
+    const model = creature(scene);
+    perScene.set(speciesId, model);
+    return model;
+  }
 
   const look = LOOKS[speciesId] ?? FALLBACK;
   const top = hexRgb(look.top);
@@ -384,7 +279,7 @@ function speciesModel(scene: Scene, speciesId: string): SpeciesModel {
   const tail = finMesh(scene, `fishTail_${speciesId}`, tailTris(look.tail, h, tailBase), 0, look.fin);
   tail.isVisible = false;
 
-  const model = { body: merged, tail };
+  const model: CreatureTemplate = { body: merged, moving: [{ mesh: tail, pivot: new Vector3(-0.44, 0, 0), axis: "y", amp: 0.45, speed: 3 }] };
   perScene.set(speciesId, model);
   return model;
 }
@@ -401,7 +296,8 @@ function finishMaterial(scene: Scene, finish: Finish): StandardMaterial {
   const hit = perScene.get(finish);
   if (hit) return hit;
   const m = new StandardMaterial(`fishFinish_${finish}`, scene);
-  m.backFaceCulling = false; // fins are single sheets
+  m.backFaceCulling = false; // fins are single sheets…
+  m.twoSidedLighting = true; // …lit the same from both sides
   m.diffuseColor = Color3.White();
   m.specularColor = new Color3(0.25, 0.25, 0.25);
   switch (finish) {
@@ -445,6 +341,23 @@ function finishMaterial(scene: Scene, finish: Finish): StandardMaterial {
   return m;
 }
 
+const glowCache = new WeakMap<Scene, Map<string, StandardMaterial>>();
+
+/** Self-lit parts (eyes, plates) keep their light whatever the mutation. */
+function glowMaterial(scene: Scene, color: string): StandardMaterial {
+  let perScene = glowCache.get(scene);
+  if (!perScene) glowCache.set(scene, (perScene = new Map()));
+  let m = perScene.get(color);
+  if (!m) {
+    m = new StandardMaterial(`creatureGlow_${color}`, scene);
+    m.diffuseColor = Color3.FromHexString(color);
+    m.emissiveColor = Color3.FromHexString(color).scale(0.85);
+    m.backFaceCulling = false;
+    perScene.set(color, m);
+  }
+  return m;
+}
+
 /** Emissive rim light: `edge` at grazing angles, `face` head-on. */
 function rim(edge: string, face: string, power: number): FresnelParameters {
   return new FresnelParameters({ leftColor: Color3.FromHexString(edge), rightColor: Color3.FromHexString(face), bias: 0.1, power });
@@ -480,24 +393,44 @@ export function createFishModel(scene: Scene, speciesId: string, mutations: read
   const keepPattern = finish === "normal" || finish === "gold" || finish === "diamond";
 
   const root = new TransformNode(`fishModel_${speciesId}`, scene);
-  const body = model.body.clone(`fishBody`, root, true)!;
-  body.isVisible = true;
-  body.material = material;
-  body.useVertexColors = keepPattern;
-  const tailPivot = new TransformNode("tailPivot", scene);
-  tailPivot.parent = root;
-  tailPivot.position.x = -0.44;
-  const tail = model.tail.clone("fishTail", tailPivot, true)!;
-  tail.isVisible = true;
-  tail.material = material;
-  tail.useVertexColors = keepPattern;
-  const meshes: Mesh[] = [body, tail];
+  const meshes: Mesh[] = [];
+  const glow = model.glowColor ? glowMaterial(scene, model.glowColor) : null;
+  const place = (template: Mesh, parent: TransformNode, lit: boolean) => {
+    const m = template.clone(template.name, parent, true)!;
+    m.isVisible = true;
+    if (lit && glow) {
+      m.material = glow;
+      m.useVertexColors = false;
+    } else {
+      m.material = material;
+      m.useVertexColors = keepPattern;
+    }
+    meshes.push(m);
+    return m;
+  };
+  place(model.body, root, false);
+  if (model.glow) place(model.glow, root, true);
+  const pivots = model.moving.map((part) => {
+    const pivot = new TransformNode("pivot", scene);
+    pivot.parent = root;
+    pivot.position.copyFrom(part.pivot);
+    place(part.mesh, pivot, false);
+    if (part.glow) place(part.glow, pivot, true);
+    return pivot;
+  });
 
   return {
     root,
     meshes,
     update(t, swim) {
-      tailPivot.rotation.y = Math.sin(swim * 3) * 0.45;
+      model.moving.forEach((part, i) => {
+        const pivot = pivots[i]!;
+        // Fish beat their tails fast (speed 3); the big creatures move slower.
+        const a = Math.sin(swim * part.speed + (part.phase ?? 0)) * part.amp;
+        if (part.axis === "x") pivot.rotation.x = a;
+        else if (part.axis === "y") pivot.rotation.y = a;
+        else pivot.rotation.z = a;
+      });
       if (finish === "lava") material.emissiveColor.set(0.8 + Math.sin(t * 4) * 0.2, 0.28 + Math.sin(t * 4) * 0.08, 0.05);
     },
     dispose() {

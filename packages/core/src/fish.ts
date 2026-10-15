@@ -33,9 +33,14 @@ export interface Species {
   baseLog10: number;
   /** Sell price of a typical-sized, unmutated fish, in coins. */
   price: number;
+  /** Relative chance within its rarity (default 1): the rarest legends are rarer still. */
+  weight?: number;
 }
 
-/** Village pond, at real-world weights; names live in the renderer's i18n file. */
+/**
+ * Everything that bites, at real-world weights (legends at legendary ones); names live in the
+ * renderer's i18n file.
+ */
 export const SPECIES: readonly Species[] = [
   { id: "tilapia", rarity: "common", baseLog10: Math.log10(0.8), price: 10 },
   { id: "walkingCatfish", rarity: "common", baseLog10: Math.log10(1.2), price: 12 },
@@ -46,8 +51,17 @@ export const SPECIES: readonly Species[] = [
   { id: "clownFeatherback", rarity: "rare", baseLog10: Math.log10(4), price: 180 },
   { id: "arowana", rarity: "epic", baseLog10: Math.log10(3), price: 700 },
   { id: "giantSnakehead", rarity: "epic", baseLog10: Math.log10(15), price: 600 },
+  { id: "shark", rarity: "epic", baseLog10: Math.log10(1_100), price: 900 },
   { id: "mekongGiantCatfish", rarity: "legendary", baseLog10: Math.log10(250), price: 3_000 },
+  { id: "orca", rarity: "legendary", baseLog10: Math.log10(5_000), price: 4_500 },
+  { id: "whale", rarity: "legendary", baseLog10: Math.log10(120_000), price: 6_000, weight: 0.7 },
+  { id: "nessie", rarity: "legendary", baseLog10: Math.log10(2_000), price: 5_000, weight: 0.8 },
   { id: "nagaFish", rarity: "mythic", baseLog10: Math.log10(5_000), price: 25_000 },
+  { id: "megalodon", rarity: "mythic", baseLog10: Math.log10(50_000), price: 30_000 },
+  { id: "bloop", rarity: "mythic", baseLog10: Math.log10(800_000), price: 50_000, weight: 0.6 },
+  { id: "elGranMaja", rarity: "mythic", baseLog10: Math.log10(400_000), price: 60_000, weight: 0.5 },
+  { id: "godzilla", rarity: "mythic", baseLog10: Math.log10(20_000_000), price: 100_000, weight: 0.3 },
+  { id: "seaEater", rarity: "mythic", baseLog10: Math.log10(1e9), price: 200_000, weight: 0.15 },
 ];
 
 /**
@@ -128,8 +142,10 @@ export function rollCatch(rng: Rng, opts: CastOptions): CastResult {
     rng,
     RARITIES.filter((r) => !forceRare || isRarePlus(r)).map((r) => [r, RARITY_WEIGHTS[r] * (isRarePlus(r) ? boost : 1)] as const),
   );
-  const pool = SPECIES.filter((s) => s.rarity === rarity);
-  const species = pool[Math.floor(rng.next() * pool.length)] ?? pool[0]!;
+  const species = pickWeighted(
+    rng,
+    SPECIES.filter((s) => s.rarity === rarity).map((s) => [s, s.weight ?? 1] as const),
+  );
 
   // Size: natural variation (about ±30%) plus a size class, almost always "normal".
   const sizeLog10 = Math.max(-0.4, Math.min(0.4, normal(rng) * 0.12));
@@ -185,6 +201,18 @@ function normal(rng: Rng): number {
   const u = Math.max(rng.next(), 1e-12);
   const v = rng.next();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/** Public drop table: chance of each species per cast, in percent (without pity or boosts). */
+export function speciesPercents(): Record<string, number> {
+  const rarity = rarityPercents();
+  const out: Record<string, number> = {};
+  for (const r of RARITIES) {
+    const pool = SPECIES.filter((s) => s.rarity === r);
+    const total = pool.reduce((sum, s) => sum + (s.weight ?? 1), 0);
+    for (const s of pool) out[s.id] = (rarity[r] * (s.weight ?? 1)) / total;
+  }
+  return out;
 }
 
 /** Public drop table: chance of each rarity per cast, in percent. */

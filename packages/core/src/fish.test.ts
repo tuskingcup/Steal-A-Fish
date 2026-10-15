@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRarePlus, NORMAL_SIZE_CHANCE, PITY_CASTS, priceOf, rarityPercents, rollCatch, SIZE_CLASSES, SPECIES } from "./fish";
+import { isRarePlus, NORMAL_SIZE_CHANCE, PITY_CASTS, priceOf, rarityPercents, rollCatch, SIZE_CLASSES, SPECIES, speciesPercents } from "./fish";
 import { createSeededRng } from "./rng";
 
 describe("rollCatch", () => {
@@ -36,6 +36,25 @@ describe("rollCatch", () => {
     for (const [rarity, pct] of Object.entries(expected)) expect(((counts[rarity] ?? 0) / N) * 100).toBeCloseTo(pct, 0);
   });
 
+  it("keeps species rates close to the published table, rarest legends rarest", () => {
+    const rng = createSeededRng(11);
+    const counts: Record<string, number> = {};
+    const N = 200_000;
+    for (let i = 0; i < N; i++) {
+      const id = rollCatch(rng, { pity: 0 }).fish.speciesId;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    const expected = speciesPercents();
+    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBeCloseTo(100, 6);
+    for (const s of SPECIES) {
+      const p = expected[s.id]! / 100;
+      const sigma = Math.sqrt((p * (1 - p)) / N) * 100;
+      expect(Math.abs(((counts[s.id] ?? 0) / N) * 100 - expected[s.id]!)).toBeLessThan(4 * sigma + 1e-9);
+    }
+    expect(expected.seaEater!).toBeLessThan(expected.godzilla!);
+    expect(expected.godzilla!).toBeLessThan(expected.nagaFish!);
+  });
+
   it("catches mostly real-world sized fish, with rare giants", () => {
     const rng = createSeededRng(4);
     const N = 50_000;
@@ -45,11 +64,12 @@ describe("rollCatch", () => {
       const { fish } = rollCatch(rng, { pity: 0 });
       counts[fish.sizeClass] = (counts[fish.sizeClass] ?? 0) + 1;
       if (fish.sizeClass === "normal" && fish.mutations.length === 0) {
-        expect(fish.weightLog10).toBeLessThan(Math.log10(20_000)); // nothing silly without a giant class or a mutation
+        // Nothing silly without a giant class or a mutation: within natural variation of its species.
+        expect(fish.weightLog10).toBeLessThan(SPECIES.find((s) => s.id === fish.speciesId)!.baseLog10 + 0.41);
         if (fish.weightLog10 < Math.log10(100)) realistic++;
       }
     }
-    expect(realistic / N).toBeGreaterThan(0.8); // the everyday catch weighs what a real fish weighs
+    expect(realistic / N).toBeGreaterThan(0.75); // the everyday catch weighs what a real fish weighs (sharks and whales aside)
     expect(((counts.normal ?? 0) / N) * 100).toBeCloseTo(NORMAL_SIZE_CHANCE * 100, 0);
     for (const c of SIZE_CLASSES) if (c.chance > 0) expect(((counts[c.id] ?? 0) / N) * 100).toBeCloseTo(c.chance * 100, 0);
   });

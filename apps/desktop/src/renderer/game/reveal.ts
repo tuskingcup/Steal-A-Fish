@@ -297,7 +297,7 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
   let stopSplash: (() => void) | null = null;
   let splashed = false;
   let savedFog = { start: 0, end: 0 };
-  let savedCam = { target: Vector3.Zero(), alpha: 0, beta: 0, radius: 0 };
+  let savedCam = { target: Vector3.Zero(), alpha: 0, beta: 0, radius: 0, lower: null as number | null, upper: null as number | null, upperBeta: null as number | null };
   let onStage = false;
   let fishUnits = FISH_UNITS;
   let closeRadius = FISH_UNITS * 1.7;
@@ -308,7 +308,11 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
   const enterStage = (): void => {
     if (onStage) return;
     onStage = true;
-    savedCam = { target: camera.target.clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius };
+    savedCam = { target: camera.target.clone(), alpha: camera.alpha, beta: camera.beta, radius: camera.radius, lower: camera.lowerRadiusLimit, upper: camera.upperRadiusLimit, upperBeta: camera.upperBetaLimit };
+    // The stage frames anything from a hand-held fish to one beside Everest: no zoom limits here.
+    camera.lowerRadiusLimit = null;
+    camera.upperRadiusLimit = null;
+    camera.upperBetaLimit = 1.56; // nearly level shots on the stage
     savedFog = { start: scene.fogStart, end: scene.fogEnd };
     scene.fogStart = 150;
     scene.fogEnd = 400;
@@ -428,6 +432,9 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     camera.alpha = savedCam.alpha;
     camera.beta = savedCam.beta;
     camera.radius = savedCam.radius;
+    camera.lowerRadiusLimit = savedCam.lower;
+    camera.upperRadiusLimit = savedCam.upper;
+    camera.upperBetaLimit = savedCam.upperBeta;
   };
 
   const finish = (): void => {

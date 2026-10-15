@@ -28,7 +28,7 @@ export const th = {
   coinsUnit: "เหรียญ",
   mutationEffect: (weight: string, price: string) => `น้ำหนัก ×${weight}, ราคา ×${price}`,
   sellPrice: "ขายได้",
-  priceTable: "ราคาขายปลา (เหรียญในเกม)",
+  priceTable: "ปลาแต่ละชนิด: น้ำหนัก · ราคาขาย (เหรียญในเกม) · โอกาสต่อการเหวี่ยง",
   priceNote: "ราคาขาย = ราคาพันธุ์ปลา × ขนาดตัว (ใหญ่กว่าปกติ 2 เท่า ได้ 2 เท่า) × ตัวคูณการกลายพันธุ์ · อันดับคิดจากมูลค่ารวมของปลาทุกตัวในรอบ",
   noFish: "ยังไม่ได้ปลาเลย",
   browseHint: "← / → ดูปลาทีละตัว · ↑ / ↓ เปลี่ยนผู้เล่น",
@@ -158,6 +158,15 @@ export const speciesTh: Record<string, string> = {
   giantSnakehead: "ปลาชะโด",
   mekongGiantCatfish: "ปลาบึก",
   nagaFish: "ปลาพญานาค",
+  shark: "ฉลามขาว",
+  orca: "วาฬเพชฌฆาต",
+  whale: "วาฬสีน้ำเงิน",
+  nessie: "เนสซี",
+  megalodon: "เมกาโลดอน",
+  bloop: "บลูป",
+  elGranMaja: "เอล กราน มาฮา",
+  godzilla: "ก็อดซิลล่า",
+  seaEater: "ซีอีทเตอร์",
 };
 
 /** Size classes; a normal-sized fish gets no label. */
