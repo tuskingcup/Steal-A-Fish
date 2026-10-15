@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { BrowserWindow, app, clipboard, ipcMain, shell } from "electron";
-import { guaranteeOf, mathRandomRng, pickLucky, RoundGame, RuleEngine, type CastAction, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
+import { DEFAULT_ROUND_CONFIG, guaranteeOf, mathRandomRng, pickLucky, RoundGame, RuleEngine, type CastAction, type CatchEvent, type FiredAction, type LiveEvent, type RulesConfig, type Viewer } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
 import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type LuckyEvent, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
@@ -115,6 +115,14 @@ function announceNewRound(): void {
   sendPodium(true);
 }
 
+/** Round and summary lengths come from settings (rules.json); the round in progress picks them up too. */
+function applyRoundTimes(config: RulesConfig): void {
+  const roundMs = config.round?.roundSec !== undefined ? config.round.roundSec * 1000 : DEFAULT_ROUND_CONFIG.roundMs;
+  const summaryMs = config.round?.summarySec !== undefined ? config.round.summarySec * 1000 : DEFAULT_ROUND_CONFIG.summaryMs;
+  game.setTimes(roundMs, summaryMs);
+  sendRound();
+}
+
 function endRound(): void {
   if (game.state().phase !== "open") return;
   sendToGame(IPC.gameSummary, game.end(Date.now()));
@@ -192,11 +200,13 @@ app.whenReady().then(async () => {
     join(app.getPath("userData"), "rules.json"),
     (config) => {
       engine.setConfig(config);
+      applyRoundTimes(config);
       broadcast(IPC.rulesChanged, config);
     },
     (message) => console.error(message),
   );
   engine.setConfig(rules.get());
+  applyRoundTimes(rules.get());
   rules.watch();
 
   useLiveSource(simulator, engine);

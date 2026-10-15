@@ -170,4 +170,18 @@ describe("RoundGame", () => {
       }
     }
   });
+
+  it("applies a new round length to the round in progress and the ones after it", () => {
+    const g = newGame();
+    g.start(0);
+    g.setTimes(600_000, 20_000);
+    expect(g.state().endsAt).toBe(600_000); // 5 min → 10 min, counted from the round's start
+    expect(g.tick(300_000).ended).toBeNull();
+    expect(g.tick(600_000).ended).not.toBeNull();
+    expect(g.state().endsAt).toBe(620_000);
+    g.tick(620_000);
+    expect(g.state()).toMatchObject({ phase: "open", endsAt: 1_220_000 });
+    g.setTimes(60_000, 20_000); // shorter than the time already played: ends on the next tick
+    expect(g.tick(700_000).ended).not.toBeNull();
+  });
 });

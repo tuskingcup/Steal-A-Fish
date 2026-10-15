@@ -147,6 +147,14 @@ describe("default rules", () => {
     expect(upgradeRulesConfig({ rules: [] }, defaultRulesConfig, 3)).toBe(defaultRulesConfig); // v1: replaced
   });
 
+  it("keep the round timing through an upgrade and validate its bounds", () => {
+    const v5 = { version: 5, rules: [], round: { roundSec: 600, summarySec: 30 } };
+    expect(upgradeRulesConfig(v5, defaultRulesConfig, 6).round).toEqual({ roundSec: 600, summarySec: 30 });
+    expect(parseRulesConfig({ rules: [], round: { roundSec: 420 } }).round).toEqual({ roundSec: 420 });
+    expect(() => parseRulesConfig({ rules: [], round: { roundSec: 5 } })).toThrow();
+    expect(() => parseRulesConfig({ rules: [], round: { summarySec: 1 } })).toThrow();
+  });
+
   it("reset re-balanced gift rules when upgrading past their version", () => {
     const v3 = { version: 3, rules: defaultRulesConfig.rules.map((r) => (r.id === "gift-rose" ? { ...r, action: { type: "cast" as const, count: 1, minPoints: 50 } } : r)) };
     const up = upgradeRulesConfig(v3, defaultRulesConfig, 4, { 4: ["gift-rose"] });

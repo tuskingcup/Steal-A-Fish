@@ -132,6 +132,8 @@ export class RoundGame {
   private phase: RoundPhase = "idle";
   private round = 0;
   private endsAt: number | null = null;
+  /** When the current phase began (ms epoch), so a timing change can move its end. */
+  private phaseAt = 0;
   private players = new Map<string, Player>();
   /** Joined during the summary (or before the first round): they play next round. */
   private queued = new Map<string, string>();
@@ -143,10 +145,24 @@ export class RoundGame {
   private frenzyBoost = 1;
   private lastSummary: RoundSummary | null = null;
 
+  private config: RoundConfig;
+
   constructor(
     private readonly rng: Rng,
-    private readonly config: RoundConfig = DEFAULT_ROUND_CONFIG,
-  ) {}
+    config: RoundConfig = DEFAULT_ROUND_CONFIG,
+  ) {
+    this.config = { ...config };
+  }
+
+  /**
+   * Change how long rounds and summaries last. The phase in progress keeps its start time and
+   * gets the new length (so a round that has already run longer than that ends on the next tick).
+   */
+  setTimes(roundMs: number, summaryMs: number): void {
+    this.config = { ...this.config, roundMs, summaryMs };
+    if (this.phase === "open") this.endsAt = this.phaseAt + roundMs;
+    else if (this.phase === "summary") this.endsAt = this.phaseAt + summaryMs;
+  }
 
   state(): RoundState {
     return { phase: this.phase, round: this.round, endsAt: this.endsAt, players: this.players.size };
@@ -156,6 +172,7 @@ export class RoundGame {
   start(now: number): void {
     this.round++;
     this.phase = "open";
+    this.phaseAt = now;
     this.endsAt = now + this.config.roundMs;
     this.players.clear();
     this.board = new Leaderboard();
@@ -168,6 +185,7 @@ export class RoundGame {
   /** Close the round now and move to the summary. */
   end(now: number): RoundSummary {
     this.phase = "summary";
+    this.phaseAt = now;
     this.endsAt = now + this.config.summaryMs;
     this.lastSummary = this.summary();
     return this.lastSummary;
