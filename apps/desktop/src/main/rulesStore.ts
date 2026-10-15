@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
-import { defaultRulesConfig, parseRulesConfig, RULES_VERSION, type RulesConfig } from "@saf/core";
+import { defaultRulesConfig, parseRulesConfig, RULES_VERSION, upgradeRulesConfig, type RulesConfig } from "@saf/core";
 
 /**
  * rules.json in userData. The settings UI and hand edits share this one file.
@@ -64,11 +64,11 @@ export class RulesStore {
       const config = parseRulesConfig(JSON.parse(readFileSync(this.path, "utf8")));
       const version = config.version ?? 1;
       if (version < RULES_VERSION) {
-        // The game's rules changed shape (e.g. likes now cast per viewer, gift tiers): start from
-        // the new defaults, keeping the old file next to it.
+        // New default rules (e.g. follow rewards): upgrade, keeping the old file next to it.
         copyFileSync(this.path, join(dirname(this.path), `rules.v${version}.backup.json`));
-        writeFileSync(this.path, JSON.stringify(defaultRulesConfig, null, 2) + "\n", "utf8");
-        return defaultRulesConfig;
+        const upgraded = upgradeRulesConfig(config, defaultRulesConfig, RULES_VERSION);
+        writeFileSync(this.path, JSON.stringify(upgraded, null, 2) + "\n", "utf8");
+        return upgraded;
       }
       return config;
     } catch (err) {

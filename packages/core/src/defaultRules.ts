@@ -1,7 +1,7 @@
 import type { CastAction, RulesConfig } from "./rules";
 
 /** Bump when the default rules change; rules.json files from older versions are replaced. */
-export const RULES_VERSION = 2;
+export const RULES_VERSION = 3;
 
 /**
  * Gift tiers. Every gift is a cast with a guarantee, so no gift is ever a dud: a minimum rarity
@@ -59,6 +59,14 @@ export const defaultRulesConfig: RulesConfig = {
           { weight: 5, label: "handHearts", cast: HAND_HEARTS },
         ],
       },
+    },
+    {
+      id: "follow-rosa",
+      enabled: true,
+      // A new follower gets a Rosa's worth (once per viewer, so re-following doesn't farm it).
+      oncePerUser: true,
+      trigger: { type: "follow" },
+      action: ROSA,
     },
     {
       id: "likes-frenzy",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GiftEvent, LiveEvent, Viewer } from "./events";
-import { RuleEngine, parseRulesConfig, pickLucky } from "./rules";
+import { RuleEngine, parseRulesConfig, pickLucky, upgradeRulesConfig } from "./rules";
 import { createSeededRng } from "./rng";
 import { defaultRulesConfig } from "./defaultRules";
 
@@ -77,7 +77,7 @@ describe("RuleEngine", () => {
   });
 
   it("skips disabled rules", () => {
-    const engine = new RuleEngine(defaultRulesConfig);
+    const engine = new RuleEngine(parseRulesConfig({ rules: [{ enabled: false, trigger: { type: "follow" }, action: { type: "cast", count: 1 } }] }));
     expect(engine.handle({ type: "follow", eventId: id(), at: 0, viewer })).toHaveLength(0);
   });
 });
@@ -124,6 +124,26 @@ describe("parseRulesConfig", () => {
   it("ships default rules that parse, with likes casting per viewer", () => {
     const parsed = parseRulesConfig(defaultRulesConfig);
     expect(parsed.rules.find((r) => r.id === "likes-cast")?.trigger).toEqual({ type: "likes", every: 50, perViewer: true });
+  });
+});
+
+describe("default rules", () => {
+  it("reward a new follower like a Rosa, once per viewer", () => {
+    const engine = new RuleEngine(parseRulesConfig(defaultRulesConfig));
+    const follow = (): LiveEvent => ({ type: "follow", eventId: id(), at: 0, viewer });
+    const fired = engine.handle(follow());
+    const rosa = defaultRulesConfig.rules.find((r) => r.id === "gift-rosa")!.action;
+    expect(fired.map((f) => f.action)).toEqual([rosa]);
+    expect(engine.handle(follow())).toHaveLength(0); // re-following doesn't farm it
+  });
+
+  it("upgrade older rules.json files, keeping the streamer's edits from version 2 on", () => {
+    const v2 = { version: 2, rules: defaultRulesConfig.rules.filter((r) => r.id !== "follow-rosa").map((r) => (r.id === "likes-cast" ? { ...r, trigger: { type: "likes" as const, every: 30, perViewer: true } } : r)) };
+    const up = upgradeRulesConfig(v2, defaultRulesConfig, 3);
+    expect(up.version).toBe(3);
+    expect(up.rules.find((r) => r.id === "likes-cast")!.trigger).toEqual({ type: "likes", every: 30, perViewer: true });
+    expect(up.rules.some((r) => r.id === "follow-rosa")).toBe(true);
+    expect(upgradeRulesConfig({ rules: [] }, defaultRulesConfig, 3)).toBe(defaultRulesConfig); // v1: replaced
   });
 });
 

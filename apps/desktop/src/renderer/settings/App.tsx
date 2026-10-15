@@ -33,6 +33,7 @@ function likesRule(config: RulesConfig | null): { every: number } | null {
 function giftOrder(rule: Rule): number {
   const t = rule.trigger;
   if (t.type === "likes") return t.perViewer ? -2 : 1e9;
+  if (t.type === "follow") return -1;
   if (t.type !== "gift") return 1e9;
   return t.minDiamonds ?? 1e6;
 }
@@ -163,7 +164,7 @@ export function App() {
         <table className="rates">
           <tbody>
             {(rules?.rules ?? [])
-              .filter((r) => r.enabled && (r.trigger.type === "gift" || r.trigger.type === "likes"))
+              .filter((r) => r.enabled && (r.trigger.type === "gift" || r.trigger.type === "likes" || r.trigger.type === "follow"))
               .sort((a, b) => giftOrder(a) - giftOrder(b))
               .map((r, i) => (
                 <tr key={r.id ?? i}>
@@ -219,7 +220,7 @@ export function App() {
           <button onClick={() => void window.saf.simulateLikes(10000)}>ไลค์ ×10,000</button>
           <button onClick={() => void window.saf.simulateComment("1")}>{th.simJoin}</button>
           <button onClick={() => void window.saf.simulateComment("!สมุด")}>คอมเมนต์ !สมุด</button>
-          <button onClick={() => void window.saf.simulateFollow()}>ติดตาม</button>
+          <button onClick={() => void window.saf.simulateFollow()}>ผู้ติดตามใหม่ (= โรซ่า)</button>
         </div>
         <div className="row">
           <button onClick={() => void window.saf.simulateCrowd(1)}>{th.newViewers(1)}</button>

@@ -85,6 +85,19 @@ export function parseRulesConfig(input: unknown): RulesConfig {
   return rulesConfigSchema.parse(input);
 }
 
+/**
+ * Bring a rules.json from an older version up to date. Before version 2 the rules had a different
+ * shape, so they are replaced outright; from version 2 on, the streamer's edits are kept and only
+ * default rules they don't have yet (by id) are added.
+ */
+export function upgradeRulesConfig(config: RulesConfig, defaults: RulesConfig, version: number): RulesConfig {
+  const from = config.version ?? 1;
+  if (from >= version) return config;
+  if (from < 2) return defaults;
+  const have = new Set(config.rules.map((r) => r.id));
+  return { version, rules: [...config.rules, ...defaults.rules.filter((r) => r.id === undefined || !have.has(r.id))] };
+}
+
 // ---------- Engine ----------
 
 export interface FiredAction {

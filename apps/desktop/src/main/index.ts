@@ -232,7 +232,8 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.simGift, (_e, input: SimGiftInput) => simulator.sendGift(input));
   ipcMain.handle(IPC.simLikes, (_e, count: number) => simulator.sendLikes(count));
   ipcMain.handle(IPC.simComment, (_e, text: string) => simulator.sendComment(text));
-  ipcMain.handle(IPC.simFollow, () => simulator.sendFollow());
+  // A brand-new viewer each time: follow rewards are once per viewer.
+  ipcMain.handle(IPC.simFollow, () => simulator.sendFollow(simulator.newViewer()));
   ipcMain.handle(IPC.simCrowd, (_e, count: number) => {
     for (let i = 0; i < Math.min(count, 50); i++) {
       const viewer = simulator.newViewer();

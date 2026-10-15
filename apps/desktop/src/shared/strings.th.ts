@@ -159,7 +159,7 @@ export function describeTrigger(trigger: Trigger): string {
     case "comment":
       return `คอมเมนต์ ${trigger.command}`;
     case "follow":
-      return "ติดตาม";
+      return "ติดตาม (ครั้งแรกต่อคน)";
     case "share":
       return "แชร์";
   }
