@@ -24,6 +24,8 @@ export interface PondScene {
   /** Fly the camera to the next (+1) or previous (-1) fisher; past either end returns to the overview. */
   focusStep(step: 1 | -1): void;
   focusOverview(): void;
+  /** Fly the camera to one fisher (no-op if they aren't out fishing). */
+  focusOn(userId: string): void;
   /** Who the camera is following, or null for the overview. */
   focusedId(): string | null;
 }
@@ -155,6 +157,11 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     focused = next < 0 || next >= ids.length ? null : ids[next]!;
     startFly();
   };
+  const focusOn = (userId: string): void => {
+    if (focused === userId || !crew.tour().some((t) => t.userId === userId)) return;
+    focused = userId;
+    startFly();
+  };
   const focusOverview = (): void => {
     if (focused === null) return;
     focused = null;
@@ -194,7 +201,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
 
   engine.runRenderLoop(() => scene.render());
   window.addEventListener("resize", () => engine.resize());
-  return { engine, scene, camera, crew, focusStep, focusOverview, focusedId: () => focused };
+  return { engine, scene, camera, crew, focusStep, focusOverview, focusOn, focusedId: () => focused };
 }
 
 function shortestAngle(from: number, to: number): number {

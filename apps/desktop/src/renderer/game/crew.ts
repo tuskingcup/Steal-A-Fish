@@ -170,6 +170,8 @@ export interface Crew {
   cast(userId: string): void;
   /** Ranks 1–3, best first: they fish from the boat; #1 wears the crown. */
   setPodium(userIds: string[]): void;
+  /** Everyone but the host gets up and leaves (a new round starts). */
+  reset(): void;
   update(camera: Camera, timeSec: number, dt: number): void;
   /** Everyone fishing, in tour order: boat (by rank), dock, rafts, then the beach from left to right. */
   tour(): FocusTarget[];
@@ -338,6 +340,11 @@ export function createCrew(
       }
       const spot = spotFor(member.userId);
       if (spot) spawn(member, spot, false);
+    },
+
+    reset() {
+      podium = [];
+      for (const f of [...fishers.values()]) if (!f.isHost) f.leaving = true;
     },
 
     cast(userId) {

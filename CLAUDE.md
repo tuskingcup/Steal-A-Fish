@@ -6,7 +6,7 @@ Steal A Fish is a **desktop game for TikTok Live streamers**. Viewers drive the 
 
 Core idea: an idle/gacha fishing game with a "Steal an Egg"–style feel. Viewers cast lines with gifts and catch fish with absurd weights (millions to trillions of kg and beyond), collect them into a personal tank that generates coins, and steal fish from each other.
 
-Status: monorepo scaffold in place (simulator → rule engine → placeholder Babylon scene). Gameplay not built yet. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
+Status: playable loop with the simulator — rounds, joining, catches (species, rarity, pity, mutations, weights), ranking and a round summary. Not built yet: persistence (SQLite), tank/coins, steal/guard, ponds beyond the village, the big catch reveal. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
 
 ## Language
 
@@ -76,6 +76,10 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 - Validate the file with a schema (zod) on load; on error keep the last valid rules and show the error in settings.
 
 ## Game rules (current design)
+
+- **Rounds** (`RoundGame` in `packages/core`): a round lasts 5 minutes, then a 60 s summary, then the next round opens. Viewers join a round by typing exactly `1` in chat (built into the main process, not a rule); joining during the summary reserves a spot in the next round, and everyone must join again each round. Every joined player casts for free every 30 s; gifts add casts, and a gifter who hasn't joined is joined automatically (no gift is wasted). Ranking — and the yacht podium and crown — is by each player's heaviest fish this round.
+- **Round summary**: podium plus a browser over every player's fish (heaviest first); ←/→ steps through players and flies the camera to them, and it auto-advances when nobody presses keys.
+- **Catches** (`rollCatch` in `fish.ts`): rarity from the published table (Rare+ boosted ×rareMultiplier during FISH FRENZY, ×1.5 with special bait), species by rarity, a heavy-tailed size, independent stacking mutations. Species ids live in core; Thai names live in the renderer's i18n file.
 
 - **Weight** = base weight × size multiplier (heavy-tailed: log-normal/Pareto) × mutation multipliers (stack) × pond/rod multiplier.
 - **Mutations** (initial): gold ×5, diamond ×50, lava ×200, neutron star ×10,000, black hole ×1,000,000.

@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { BrowserWindow, app, ipcMain, shell } from "electron";
-import { Leaderboard, RuleEngine, type FiredAction, type LiveEvent } from "@saf/core";
+import { mathRandomRng, RoundGame, RuleEngine, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
-import { IPC, type ConnectInput, type RankedPlayer, type LogEntry, type SimGiftInput } from "../shared/api";
+import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
 
 let gameWindow: BrowserWindow | null = null;
@@ -12,33 +12,93 @@ const simulator = new SimulatedLiveSource();
 let live: LiveSource = simulator;
 let unsubscribeLive: Array<() => void> = [];
 
-const leaderboard = new Leaderboard();
-/** Latest display name per userId (names change; ids don't). */
-const names = new Map<string, string>();
+/** Typing exactly this in chat joins the current round (or queues for the next one). */
+const JOIN_COMMAND = "1";
 
+// All randomness and game state live here; renderers only animate what they're sent.
+const game = new RoundGame(mathRandomRng);
 let lastPodium = "";
 
-function podium(): RankedPlayer[] {
-  return leaderboard.top(3).map((id) => ({ userId: id, name: names.get(id) ?? id }));
+const displayName = (v: Viewer) => v.nickname || v.uniqueId;
+
+function sendToGame(channel: string, payload: unknown): void {
+  if (gameWindow && !gameWindow.isDestroyed()) gameWindow.webContents.send(channel, payload);
+}
+
+function sendRound(): void {
+  broadcast(IPC.gameRound, game.state());
 }
 
 function sendPodium(force = false): void {
-  const list = podium();
+  const list: RankedPlayer[] = game.podium();
   const json = JSON.stringify(list);
   if (!force && json === lastPodium) return;
   lastPodium = json;
-  gameWindow?.webContents.send(IPC.gamePodium, list);
+  sendToGame(IPC.gamePodium, list);
 }
 
-/** Placeholder scoring until GameCore: one point per fish caught. */
-function score(fired: FiredAction): void {
+function emitCatches(events: CatchEvent[]): void {
+  for (const e of events) sendToGame(IPC.gameCatch, e);
+  if (events.length > 0) sendPodium();
+}
+
+function joinRound(viewer: Viewer): void {
+  const result = game.join(viewer.userId, displayName(viewer), Date.now());
+  if (result === "already") return;
+  const joined: JoinedEvent = { userId: viewer.userId, name: displayName(viewer), queued: result === "queued" };
+  sendToGame(IPC.gameJoined, joined);
+  sendRound();
+}
+
+/** Turn a fired rule into game state changes. */
+function apply(fired: FiredAction): void {
   const { action, viewer, times } = fired;
-  names.set(viewer.userId, viewer.nickname || viewer.uniqueId);
-  const fish = action.type === "cast" || action.type === "net" ? action.count * times : 0;
-  if (fish > 0) {
-    leaderboard.add(viewer.userId, fish);
-    sendPodium();
+  const now = Date.now();
+  switch (action.type) {
+    case "cast":
+    case "net": {
+      // A gift is a clear wish to play: gifters join automatically, so no gift is wasted.
+      if (game.state().phase === "open" && !game.isPlaying(viewer.userId)) joinRound(viewer);
+      const boost = action.type === "cast" && action.bait ? 1.5 : 1;
+      emitCatches(game.cast(viewer.userId, action.count * times, now, boost));
+      break;
+    }
+    case "frenzy":
+      game.frenzy(now + action.durationSec * 1000, action.rareMultiplier);
+      break;
+    default:
+      break;
   }
+}
+
+function startRound(): void {
+  if (game.state().phase === "open") endRound();
+  game.start(Date.now());
+  announceNewRound();
+}
+
+/** Round state first (the game window clears the dock on a new round), then who is already in it. */
+function announceNewRound(): void {
+  sendRound();
+  for (const p of game.roster()) sendToGame(IPC.gameJoined, { ...p, queued: false } satisfies JoinedEvent);
+  lastPodium = "";
+  sendPodium(true);
+}
+
+function endRound(): void {
+  if (game.state().phase !== "open") return;
+  sendToGame(IPC.gameSummary, game.end(Date.now()));
+  sendRound();
+}
+
+function tick(): void {
+  const result = game.tick(Date.now());
+  emitCatches(result.catches);
+  if (result.ended) {
+    sendToGame(IPC.gameSummary, result.ended);
+    sendRound();
+  }
+  if (result.started) announceNewRound();
 }
 
 function rendererUrl(page: "game" | "settings"): { url?: string; file?: string } {
@@ -77,10 +137,11 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 function dispatch(engine: RuleEngine, event: LiveEvent): void {
+  if (event.type === "comment" && event.text.trim() === JOIN_COMMAND) joinRound(event.viewer);
   const fired = engine.handle(event);
   for (const action of fired) {
-    gameWindow?.webContents.send(IPC.gameAction, action);
-    score(action);
+    sendToGame(IPC.gameAction, action);
+    apply(action);
   }
   const entry: LogEntry = { at: Date.now(), event, fired };
   settingsWindow?.webContents.send(IPC.logEntry, entry);
@@ -141,20 +202,35 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.simFollow, () => simulator.sendFollow());
   ipcMain.handle(IPC.simCrowd, (_e, count: number) => {
     for (let i = 0; i < Math.min(count, 50); i++) {
-      simulator.sendGift({ giftId: 5655, giftName: "Rose", diamonds: 1, viewer: simulator.newViewer() });
+      const viewer = simulator.newViewer();
+      simulator.sendComment(JOIN_COMMAND, viewer);
+      simulator.sendGift({ giftId: 5655, giftName: "Rose", diamonds: 1, viewer });
     }
   });
+  ipcMain.handle(IPC.roundStart, () => startRound());
+  ipcMain.handle(IPC.roundEnd, () => endRound());
+
+  game.start(Date.now());
+  const ticker = setInterval(tick, 500);
 
   // 540×960 is a quarter of the 1080×1920 portrait stream frame; OBS scales it up.
   gameWindow = createWindow("game", { width: 540, height: 960, title: "Steal A Fish — Game", backgroundColor: "#0C2B40" });
   settingsWindow = createWindow("settings", { width: 1100, height: 780, title: "Steal A Fish — Settings", backgroundColor: "#0E1C24" });
 
   gameWindow.on("closed", () => (gameWindow = null));
-  // A reloaded game window (e.g. dev HMR) still shows the current podium.
-  gameWindow.webContents.on("did-finish-load", () => sendPodium(true));
+  // A reloaded game window (e.g. dev HMR) catches up on the round, its players and the podium.
+  gameWindow.webContents.on("did-finish-load", () => {
+    sendRound();
+    for (const p of game.roster()) sendToGame(IPC.gameJoined, { ...p, queued: false } satisfies JoinedEvent);
+    const summary = game.lastRoundSummary();
+    if (game.state().phase === "summary" && summary) sendToGame(IPC.gameSummary, summary);
+    sendPodium(true);
+  });
+  settingsWindow.webContents.on("did-finish-load", () => sendRound());
   settingsWindow.on("closed", () => (settingsWindow = null));
 
   app.on("before-quit", () => {
+    clearInterval(ticker);
     rules.close();
     void live.disconnect();
   });

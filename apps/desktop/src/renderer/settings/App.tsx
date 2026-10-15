@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
+import { MUTATIONS, PITY_CASTS, RARITIES, rarityPercents, type RoundState } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
-import { describeAction, describeEvent, th } from "../shared/strings.th";
+import { describeAction, describeEvent, formatClock, mutationTh, rarityTh, th } from "../shared/strings.th";
+
+/** Public drop table (shown to everyone: no hidden odds). */
+const PERCENTS = rarityPercents();
+const fmtPct = (p: number) => (p >= 1 ? p.toFixed(1) : p >= 0.01 ? p.toFixed(2) : p.toFixed(3));
 
 // Placeholder gifts for the simulator. Real ids come from the live gift list later.
 const SIM_GIFTS: Array<SimGiftInput & { label: string }> = [
@@ -21,14 +26,20 @@ export function App() {
   const [rulesText, setRulesText] = useState("");
   const [rulesMsg, setRulesMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [round, setRound] = useState<RoundState | null>(null);
+  const [, setNow] = useState(Date.now());
 
   useEffect(() => {
     void window.saf.getRules().then((r) => setRulesText(JSON.stringify(r, null, 2)));
     const offState = window.saf.onLiveState(setState);
     const offLog = window.saf.onLog((entry) => setLog((prev) => [entry, ...prev].slice(0, MAX_LOG)));
+    const offRound = window.saf.onRound(setRound);
+    const clock = setInterval(() => setNow(Date.now()), 500);
     return () => {
       offState();
       offLog();
+      offRound();
+      clearInterval(clock);
     };
   }, []);
 
@@ -76,6 +87,23 @@ export function App() {
       </section>
 
       <section>
+        <h2>{th.roundPanel}</h2>
+        {round && (
+          <p className="status">
+            <strong>{th.round(Math.max(round.round, 1))}</strong> · {th.phase[round.phase]}
+            {round.endsAt !== null && ` · ${formatClock(round.endsAt - Date.now())}`} · {th.players(round.players)}
+          </p>
+        )}
+        <div className="row">
+          <button className="primary" onClick={() => void window.saf.startRound()}>
+            {th.startRound}
+          </button>
+          <button onClick={() => void window.saf.endRound()}>{th.endRound}</button>
+        </div>
+        <p className="hint">{th.roundRules}</p>
+      </section>
+
+      <section>
         <h2>{th.simulator}</h2>
         <div className="row">
           {SIM_GIFTS.map((g) => (
@@ -87,6 +115,7 @@ export function App() {
         <div className="row">
           <button onClick={() => void window.saf.simulateLikes(1000)}>ไลค์ ×1,000</button>
           <button onClick={() => void window.saf.simulateLikes(10000)}>ไลค์ ×10,000</button>
+          <button onClick={() => void window.saf.simulateComment("1")}>{th.simJoin}</button>
           <button onClick={() => void window.saf.simulateComment("!สมุด")}>คอมเมนต์ !สมุด</button>
           <button onClick={() => void window.saf.simulateFollow()}>ติดตาม</button>
         </div>
@@ -96,6 +125,35 @@ export function App() {
           <button onClick={() => void window.saf.simulateCrowd(10)}>{th.newViewers(10)}</button>
         </div>
         <p className="hint">{th.cameraKeys}</p>
+      </section>
+
+      <section>
+        <h2>{th.dropRates}</h2>
+        <table className="rates">
+          <tbody>
+            {RARITIES.map((r) => (
+              <tr key={r}>
+                <td className={`r-${r}`}>{rarityTh[r]}</td>
+                <td>{fmtPct(PERCENTS[r])}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <h2>{th.mutationRates}</h2>
+        <table className="rates">
+          <tbody>
+            {MUTATIONS.map((m) => (
+              <tr key={m.id}>
+                <td>
+                  {mutationTh[m.id]} ×{m.multiplier.toLocaleString("th-TH")}
+                </td>
+                <td>{fmtPct(m.chance * 100)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="hint">{th.pityNote.replace("30", String(PITY_CASTS))}</p>
+        <p className="hint">{th.noRealValue}</p>
       </section>
 
       <section className="wide">

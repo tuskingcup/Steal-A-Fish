@@ -1,4 +1,4 @@
-import type { FiredAction, LiveEvent, RulesConfig } from "@saf/core";
+import type { CatchEvent, FiredAction, LiveEvent, RoundState, RoundSummary, RulesConfig } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 
 /** IPC channel names. Keep main, preload and renderers in sync through this file. */
@@ -15,6 +15,12 @@ export const IPC = {
   simCrowd: "sim:crowd",
   gameAction: "game:action",
   gamePodium: "game:podium",
+  gameRound: "game:round",
+  gameCatch: "game:catch",
+  gameJoined: "game:joined",
+  gameSummary: "game:summary",
+  roundStart: "round:start",
+  roundEnd: "round:end",
   logEntry: "log:entry",
 } as const;
 
@@ -36,6 +42,13 @@ export interface RankedPlayer {
   name: string;
 }
 
+/** A viewer typed the join command. `queued`: it was between rounds, so they play next round. */
+export interface JoinedEvent {
+  userId: string;
+  name: string;
+  queued: boolean;
+}
+
 export type SaveRulesResult = { ok: true } | { ok: false; error: string };
 
 export interface LogEntry {
@@ -54,10 +67,18 @@ export interface SafApi {
   simulateLikes(count: number): Promise<void>;
   simulateComment(text: string): Promise<void>;
   simulateFollow(): Promise<void>;
-  /** `count` brand-new viewers each send a rose. */
+  /** `count` brand-new viewers each type the join command and send a rose. */
   simulateCrowd(count: number): Promise<void>;
+  /** Open a new round now (ends the current one first). */
+  startRound(): Promise<void>;
+  /** End the current round now and show the summary. */
+  endRound(): Promise<void>;
   onLiveState(listener: (state: ConnectionState) => void): () => void;
   onGameAction(listener: (action: FiredAction) => void): () => void;
   onPodium(listener: (podium: RankedPlayer[]) => void): () => void;
+  onRound(listener: (state: RoundState) => void): () => void;
+  onCatch(listener: (event: CatchEvent) => void): () => void;
+  onJoined(listener: (event: JoinedEvent) => void): () => void;
+  onSummary(listener: (summary: RoundSummary) => void): () => void;
   onLog(listener: (entry: LogEntry) => void): () => void;
 }

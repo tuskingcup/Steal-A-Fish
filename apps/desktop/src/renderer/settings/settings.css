@@ -34,3 +34,8 @@ button:disabled { opacity: .5; cursor: default; }
 .log time { color: #6e8792; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .log .fired { color: var(--accent); }
 .log .none { color: #6e8792; }
+.rates { border-collapse: collapse; font-size: 13px; }
+.rates td { padding: 3px 10px 3px 0; border-bottom: 1px solid var(--border); }
+.rates td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.r-common { color: #C9D1D9; } .r-uncommon { color: #6FD08C; } .r-rare { color: #4FA3FF; }
+.r-epic { color: #B47CFF; } .r-legendary { color: #FFB52E; } .r-mythic { color: #FF5C8A; }

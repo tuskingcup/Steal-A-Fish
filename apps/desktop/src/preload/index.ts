@@ -20,6 +20,12 @@ const api: SafApi = {
   onLiveState: (listener) => subscribe(IPC.liveState, listener),
   onGameAction: (listener) => subscribe(IPC.gameAction, listener),
   onPodium: (listener) => subscribe(IPC.gamePodium, listener),
+  onRound: (listener) => subscribe(IPC.gameRound, listener),
+  onCatch: (listener) => subscribe(IPC.gameCatch, listener),
+  onJoined: (listener) => subscribe(IPC.gameJoined, listener),
+  onSummary: (listener) => subscribe(IPC.gameSummary, listener),
+  startRound: () => ipcRenderer.invoke(IPC.roundStart),
+  endRound: () => ipcRenderer.invoke(IPC.roundEnd),
   onLog: (listener) => subscribe(IPC.logEntry, listener),
 };
 

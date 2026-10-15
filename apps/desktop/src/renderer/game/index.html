@@ -20,15 +20,58 @@
     .tag.focus { font-size: 16px; padding: 4px 12px; border-color: #FFFFFF; z-index: 1; }
     .tag.champion::before { content: "👑 "; }
     .tag.champion { color: #2A1A00; background: linear-gradient(#FFE07A, #FFB52E); border-color: #FFF3B0; box-shadow: 0 0 10px #FFC23D99; }
+    /* Rarity colours (shared by feed, cards, summary). */
+    .r-common { --rc: #C9D1D9; } .r-uncommon { --rc: #6FD08C; } .r-rare { --rc: #4FA3FF; }
+    .r-epic { --rc: #B47CFF; } .r-legendary { --rc: #FFB52E; } .r-mythic { --rc: #FF5C8A; }
+    .rarity { color: var(--rc); font-weight: 700; }
+    .chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--rc); color: #10141A; vertical-align: middle; }
+
+    #roundbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+    #roundbar .pill { background: #071C29D9; border: 2px solid #2D6E84; border-radius: 999px; padding: 3px 12px; font-weight: 600; }
+    #roundbar .clock { color: #FFC23D; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: center; }
+    #roundbar .clock.low { color: #FF5C5C; }
+    #joinhint { font-size: 15px; font-weight: 700; color: #071C29; background: #FFC23D; border-radius: 10px; padding: 4px 12px; align-self: flex-start; box-shadow: 0 2px 0 #0006; }
+
+    #card { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: 82%; max-width: 440px; text-align: center; pointer-events: none;
+      background: #071C29F0; border: 3px solid var(--rc); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 0 28px var(--rc); display: none; }
+    #card.show { display: block; animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
+    #card .who { font-size: 15px; color: #9FE3E6; }
+    #card .name { font-size: 26px; font-weight: 800; margin: 4px 0; color: var(--rc); }
+    #card .weight { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #0008; }
+    #card .best { color: #FFC23D; font-weight: 700; font-size: 14px; }
+    @keyframes pop { from { transform: translateX(-50%) scale(.6); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+
+    #summary { position: fixed; inset: 128px 12px 12px; display: none; flex-direction: column; gap: 10px; pointer-events: none; }
+    #summary.show { display: flex; }
+    #summary .panel { background: #071C29EB; border: 2px solid #2D6E84; border-radius: 14px; padding: 10px 14px; }
+    #summary h2 { margin: 0 0 6px; font-size: 22px; color: #FFC23D; }
+    #summary .podium div { display: flex; gap: 8px; align-items: baseline; font-size: 15px; padding: 2px 0; }
+    #summary .podium .medal { width: 1.6em; }
+    #summary .podium .pname { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #summary .browser { margin-top: auto; }
+    #summary .bhead { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; }
+    #summary .bhead .bname { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #summary .arrow { color: #FFC23D; font-size: 22px; }
+    #summary .stats { font-size: 13px; color: #9FE3E6; text-align: center; margin: 2px 0 6px; }
+    #summary .fish { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; border-top: 1px solid #2D6E8455; }
+    #summary .fish .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #summary .fish .fw { font-weight: 700; font-variant-numeric: tabular-nums; }
+    #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
+    body.in-summary #feed, body.in-summary #joinhint { display: none; }
+
     @keyframes in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
   </style>
 </head>
 <body>
   <canvas id="scene"></canvas>
   <div id="tags"></div>
+  <div id="card"></div>
+  <div id="summary"></div>
   <div id="hud">
     <div id="title"></div>
     <div id="pond"></div>
+    <div id="roundbar"></div>
+    <div id="joinhint"></div>
     <div id="feed"></div>
   </div>
   <script type="module" src="./main.ts"></script>
