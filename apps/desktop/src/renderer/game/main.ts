@@ -33,6 +33,11 @@ window.saf.onGameAction((fired) => {
   push(`<b>@${esc(who)}</b> → ${esc(describeAction(fired.action, fired.times))}`);
 });
 
+window.saf.onChampion((champion) => {
+  crew.setChampion(champion?.userId ?? null);
+  if (champion) push(`👑 <b>@${esc(champion.name)}</b> ${esc(th.newChampion)}`);
+});
+
 // Name tags are HTML over the canvas: crisper Thai text than drawing it in the 3D scene.
 const tags = new Map<string, HTMLDivElement>();
 scene.onAfterRenderObservable.add(() => {
@@ -42,10 +47,11 @@ scene.onAfterRenderObservable.add(() => {
     let el = tags.get(t.userId);
     if (!el) {
       el = document.createElement("div");
-      el.className = t.isHost ? "tag host" : "tag";
       tagLayer.appendChild(el);
       tags.set(t.userId, el);
     }
+    const cls = t.isChampion ? "tag champion" : t.isHost ? "tag host" : "tag";
+    if (el.className !== cls) el.className = cls;
     if (el.textContent !== t.name) el.textContent = t.name;
     el.style.display = t.visible ? "" : "none";
     el.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px) translate(-50%, -100%)`;

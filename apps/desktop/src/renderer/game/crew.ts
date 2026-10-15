@@ -9,12 +9,13 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
+import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
 import { CreateLines } from "@babylonjs/core/Meshes/Builders/linesBuilder";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { avatarFor, hashString, type Avatar } from "@saf/core";
 import { createFisherSprite, HAND_LOCAL, HEAD_TOP_LOCAL, rotateY, type FisherSprite } from "./fisherSprite";
-import { hash01, lowPolyMat } from "./materials";
+import { flat, hash01, lowPolyMat } from "./materials";
 import { DOCK_END, DOCK_TOP, waveHeight } from "./seaside";
 
 /** Seats on the dock edges: two at the end facing the open sea, three down each side. */
@@ -63,6 +64,7 @@ export interface NameTag {
   userId: string;
   name: string;
   isHost: boolean;
+  isChampion: boolean;
   /** CSS pixels relative to the canvas. */
   x: number;
   y: number;
@@ -95,6 +97,8 @@ export interface Crew {
   join(member: CrewMember): void;
   /** Play a cast/strike on the viewer's fisher. */
   cast(userId: string): void;
+  /** Put the crown on #1 (shown while they're on the dock). */
+  setChampion(userId: string | null): void;
   update(camera: Camera, timeSec: number, dt: number): void;
   nameTags(camera: Camera): NameTag[];
 }
@@ -213,6 +217,27 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
 
   spawn(host, 0, true);
 
+  const crown = createCrown(scene, shadows);
+  let championId: string | null = null;
+  let crownPop = 0;
+
+  function updateCrown(timeSec: number, dt: number): void {
+    const f = championId === null ? undefined : fishers.get(championId);
+    if (!f || f.leaving || f.appear < 0.5) {
+      crown.setEnabled(false);
+      return;
+    }
+    crown.setEnabled(true);
+    crownPop = Math.min(1, crownPop + dt * 1.8);
+    const seat = SEATS[f.seat]!;
+    const base = seat.pos.add(rotateY(CROWN_LOCAL, seat.yaw));
+    // Drops in from above with a bounce, then bobs and slowly turns.
+    const drop = (1 - easeOutBack(crownPop)) * 1.2;
+    crown.position.set(base.x, base.y + drop + Math.sin(timeSec * 2.2) * 0.04, base.z);
+    crown.rotation.y = timeSec * 0.9;
+    crown.scaling.setAll(1.25 * (0.4 + 0.6 * Math.min(1, crownPop * 1.5)));
+  }
+
   const crew: Crew = {
     join(member) {
       const existing = fishers.get(member.userId);
@@ -242,8 +267,15 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
       f.lastActive = now;
     },
 
+    setChampion(userId) {
+      if (userId === championId) return;
+      championId = userId;
+      crownPop = 0;
+    },
+
     update(camera, timeSec, dt) {
       now = timeSec;
+      updateCrown(timeSec, dt);
       for (const f of [...fishers.values()]) {
         if (!f.isHost && !f.leaving && now - f.lastActive > IDLE_LEAVE_SEC) f.leaving = true;
         f.appear = f.leaving ? f.appear - dt * 3 : Math.min(1, f.appear + dt * 3);
@@ -295,13 +327,15 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
       const camForward = camera.getDirection(new Vector3(0, 0, 1));
       return [...fishers.values()].map((f) => {
         const seat = SEATS[f.seat]!;
-        const world = seat.pos.add(rotateY(HEAD_TOP_LOCAL, seat.yaw));
+        const top = f.member.userId === championId ? CROWN_LOCAL[1] + 0.3 : HEAD_TOP_LOCAL[1];
+        const world = seat.pos.add(rotateY([HEAD_TOP_LOCAL[0], top, HEAD_TOP_LOCAL[2]], seat.yaw));
         const p = Vector3.Project(world, Matrix.IdentityReadOnly, transform, viewport);
         const inFront = Vector3.Dot(world.subtract(camera.globalPosition), camForward) > 0;
         return {
           userId: f.member.userId,
           name: f.member.name,
           isHost: f.isHost,
+          isChampion: f.member.userId === championId,
           x: p.x * cssScale,
           y: p.y * cssScale,
           visible: inFront && f.appear > 0.6 && p.z > 0 && p.z < 1,
@@ -316,4 +350,36 @@ function easeOutBack(t: number): number {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+/** Above the hat, fisher-local. */
+const CROWN_LOCAL: readonly [number, number, number] = [0, 1.32, 0.05];
+
+/** Low-poly gold crown: band, five points with ball tips, a ruby in front. Emissive so it blooms. */
+function createCrown(scene: Scene, shadows: ShadowGenerator): TransformNode {
+  const crown = new TransformNode("crown", scene);
+  const gold = lowPolyMat(scene, "#FFC93C", { specular: 0.9, emissive: 0.45 });
+  const ruby = lowPolyMat(scene, "#E0283C", { specular: 0.9, emissive: 0.5 });
+  const band = CreateCylinder("crownBand", { height: 0.1, diameterTop: 0.34, diameterBottom: 0.3, tessellation: 10 }, scene);
+  band.parent = crown;
+  band.material = gold;
+  shadows.addShadowCaster(band);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const spike = CreateCylinder(`crownSpike${i}`, { height: 0.16, diameterTop: 0, diameterBottom: 0.1, tessellation: 4 }, scene);
+    spike.parent = crown;
+    spike.position = new Vector3(Math.sin(a) * 0.145, 0.12, Math.cos(a) * 0.145);
+    spike.rotation = new Vector3(Math.cos(a) * 0.18, 0, -Math.sin(a) * 0.18);
+    spike.material = gold;
+    const ball = flat(CreateIcoSphere(`crownBall${i}`, { radius: 0.028, subdivisions: 1 }, scene));
+    ball.parent = crown;
+    ball.position = new Vector3(Math.sin(a) * 0.16, 0.205, Math.cos(a) * 0.16);
+    ball.material = gold;
+  }
+  const gem = flat(CreateIcoSphere("crownGem", { radius: 0.04, subdivisions: 1 }, scene));
+  gem.parent = crown;
+  gem.position = new Vector3(0, 0, 0.165);
+  gem.material = ruby;
+  crown.setEnabled(false);
+  return crown;
 }

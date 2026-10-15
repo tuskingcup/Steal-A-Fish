@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { BrowserWindow, app, ipcMain, shell } from "electron";
-import { RuleEngine, type LiveEvent } from "@saf/core";
+import { Leaderboard, RuleEngine, type FiredAction, type LiveEvent } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
-import { IPC, type ConnectInput, type LogEntry, type SimGiftInput } from "../shared/api";
+import { IPC, type Champion, type ConnectInput, type LogEntry, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
 
 let gameWindow: BrowserWindow | null = null;
@@ -11,6 +11,25 @@ let settingsWindow: BrowserWindow | null = null;
 const simulator = new SimulatedLiveSource();
 let live: LiveSource = simulator;
 let unsubscribeLive: Array<() => void> = [];
+
+const leaderboard = new Leaderboard();
+/** Latest display name per userId (names change; ids don't). */
+const names = new Map<string, string>();
+
+function currentChampion(): Champion | null {
+  const id = leaderboard.champion();
+  return id === null ? null : { userId: id, name: names.get(id) ?? id };
+}
+
+/** Placeholder scoring until GameCore: one point per fish caught. */
+function score(fired: FiredAction): void {
+  const { action, viewer, times } = fired;
+  names.set(viewer.userId, viewer.nickname || viewer.uniqueId);
+  const fish = action.type === "cast" || action.type === "net" ? action.count * times : 0;
+  if (fish > 0 && leaderboard.add(viewer.userId, fish)) {
+    gameWindow?.webContents.send(IPC.gameChampion, currentChampion());
+  }
+}
 
 function rendererUrl(page: "game" | "settings"): { url?: string; file?: string } {
   const devServer = process.env.ELECTRON_RENDERER_URL;
@@ -49,7 +68,10 @@ function broadcast(channel: string, payload: unknown): void {
 
 function dispatch(engine: RuleEngine, event: LiveEvent): void {
   const fired = engine.handle(event);
-  for (const action of fired) gameWindow?.webContents.send(IPC.gameAction, action);
+  for (const action of fired) {
+    gameWindow?.webContents.send(IPC.gameAction, action);
+    score(action);
+  }
   const entry: LogEntry = { at: Date.now(), event, fired };
   settingsWindow?.webContents.send(IPC.logEntry, entry);
 }
@@ -113,6 +135,8 @@ app.whenReady().then(async () => {
   settingsWindow = createWindow("settings", { width: 1100, height: 780, title: "Steal A Fish — Settings", backgroundColor: "#0E1C24" });
 
   gameWindow.on("closed", () => (gameWindow = null));
+  // A reloaded game window (e.g. dev HMR) still shows the current crown.
+  gameWindow.webContents.on("did-finish-load", () => gameWindow?.webContents.send(IPC.gameChampion, currentChampion()));
   settingsWindow.on("closed", () => (settingsWindow = null));
 
   app.on("before-quit", () => {

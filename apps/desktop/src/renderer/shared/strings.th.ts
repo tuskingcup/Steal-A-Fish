@@ -6,6 +6,7 @@ export const th = {
   pondVillage: "บ่อหมู่บ้าน",
   waiting: "รอของขวัญจากคนดู…",
   hostName: "เจ้าของท่าเรือ",
+  newChampion: "ขึ้นอันดับ 1 แล้ว!",
 
   settingsTitle: "ตั้งค่า Steal A Fish",
   connection: "เชื่อมต่อไลฟ์",

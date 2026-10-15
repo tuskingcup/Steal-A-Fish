@@ -13,6 +13,7 @@ export const IPC = {
   simComment: "sim:comment",
   simFollow: "sim:follow",
   gameAction: "game:action",
+  gameChampion: "game:champion",
   logEntry: "log:entry",
 } as const;
 
@@ -26,6 +27,12 @@ export interface SimGiftInput {
 export interface ConnectInput {
   uniqueId: string;
   signApiKey?: string;
+}
+
+/** Who holds #1 (wears the crown). */
+export interface Champion {
+  userId: string;
+  name: string;
 }
 
 export type SaveRulesResult = { ok: true } | { ok: false; error: string };
@@ -48,5 +55,6 @@ export interface SafApi {
   simulateFollow(): Promise<void>;
   onLiveState(listener: (state: ConnectionState) => void): () => void;
   onGameAction(listener: (action: FiredAction) => void): () => void;
+  onChampion(listener: (champion: Champion | null) => void): () => void;
   onLog(listener: (entry: LogEntry) => void): () => void;
 }
