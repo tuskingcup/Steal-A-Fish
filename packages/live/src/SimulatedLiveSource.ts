@@ -1,0 +1,59 @@
+import type { Viewer } from "@saf/core";
+import { BaseLiveSource } from "./LiveSource";
+
+const SAMPLE_VIEWERS: Viewer[] = [
+  { userId: "sim-1", uniqueId: "nong_ploy", nickname: "Ploy" },
+  { userId: "sim-2", uniqueId: "mek_za", nickname: "Mek" },
+  { userId: "sim-3", uniqueId: "boss_fishing", nickname: "Boss" },
+  { userId: "sim-4", uniqueId: "jj_99", nickname: "JJ" },
+];
+
+/**
+ * Fake live source for development and for the "test" buttons in settings.
+ * Lets the whole game run without going live.
+ */
+export class SimulatedLiveSource extends BaseLiveSource {
+  readonly kind = "simulator";
+  private seq = 0;
+
+  async connect(): Promise<void> {
+    this.setState({ status: "connected", roomId: "simulator" });
+  }
+
+  async disconnect(): Promise<void> {
+    this.setState({ status: "disconnected" });
+  }
+
+  sendGift(opts: { giftId: number; giftName: string; diamonds: number; repeatCount?: number; viewer?: Viewer }): void {
+    this.emit({
+      type: "gift",
+      eventId: this.nextId(),
+      at: Date.now(),
+      viewer: opts.viewer ?? this.randomViewer(),
+      giftId: opts.giftId,
+      giftName: opts.giftName,
+      diamonds: opts.diamonds,
+      repeatCount: opts.repeatCount ?? 1,
+    });
+  }
+
+  sendLikes(likeCount: number, viewer?: Viewer): void {
+    this.emit({ type: "like", eventId: this.nextId(), at: Date.now(), viewer: viewer ?? this.randomViewer(), likeCount });
+  }
+
+  sendComment(text: string, viewer?: Viewer): void {
+    this.emit({ type: "comment", eventId: this.nextId(), at: Date.now(), viewer: viewer ?? this.randomViewer(), text });
+  }
+
+  sendFollow(viewer?: Viewer): void {
+    this.emit({ type: "follow", eventId: this.nextId(), at: Date.now(), viewer: viewer ?? this.randomViewer() });
+  }
+
+  private nextId(): string {
+    return `sim-${Date.now()}-${++this.seq}`;
+  }
+
+  private randomViewer(): Viewer {
+    return SAMPLE_VIEWERS[Math.floor(Math.random() * SAMPLE_VIEWERS.length)] ?? SAMPLE_VIEWERS[0]!;
+  }
+}

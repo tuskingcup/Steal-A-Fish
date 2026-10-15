@@ -6,7 +6,7 @@ Steal A Fish is a **desktop game for TikTok Live streamers**. Viewers drive the 
 
 Core idea: an idle/gacha fishing game with a "Steal an Egg"–style feel. Viewers cast lines with gifts and catch fish with absurd weights (millions to trillions of kg and beyond), collect them into a personal tank that generates coins, and steal fish from each other.
 
-Status: early planning. No code yet. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
+Status: monorepo scaffold in place (simulator → rule engine → placeholder Babylon scene). Gameplay not built yet. The planning doc lives outside the repo (Claude Doc "Steal A Fish — แผนเกม 3D").
 
 ## Language
 
@@ -17,10 +17,11 @@ Status: early planning. No code yet. The planning doc lives outside the repo (Cl
 
 | Part | Choice |
 |---|---|
-| Desktop shell | Electron — a **game window** and a separate **settings window** |
-| Game renderer | Babylon.js + TypeScript + Vite |
+| Monorepo | pnpm workspaces + Turborepo |
+| Desktop shell | Electron — a **game window** and a separate **settings window**, built with `electron-vite` |
+| Game renderer | Babylon.js + TypeScript (Vite, via electron-vite) |
 | In-game UI (result cards, leaderboard) | HTML/CSS layered over the Babylon canvas (crisper Thai text than Babylon GUI) |
-| Settings UI | React |
+| Settings UI | React (Vite, via electron-vite) — not Next.js |
 | TikTok Live events | `tiktok-live-connector` (Node, runs in Electron main process), wrapped behind a `LiveSource` interface |
 | Persistence | SQLite (`better-sqlite3`) in the app's userData folder |
 | Big numbers | `break_infinity.js` |
@@ -28,6 +29,8 @@ Status: early planning. No code yet. The planning doc lives outside the repo (Cl
 | CI / release | GitHub Actions: build on push, publish release artifacts on version tag |
 
 The streamer captures the game window with OBS Window/Game Capture. Do not render the 3D scene twice (no extra browser-source copy).
+
+**No server.** The game is a self-contained desktop app; all logic runs in the Electron main process. Do not add Next.js or NestJS to the desktop app. They are reserved for future online features (cross-stream leaderboard, public collection pages, streamer accounts/licensing, cloud-hosted connector), which would land as `apps/web` (Next.js) and `apps/api` (NestJS + PostgreSQL) reusing `packages/core`.
 
 ## Architecture
 
@@ -102,11 +105,29 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 ## Repository conventions
 
 - TypeScript strict mode everywhere.
-- Planned layout (create as needed):
-  - `apps/desktop/` — Electron main, preload, packaging config
-  - `apps/game/` — Babylon renderer + HTML overlay
-  - `apps/settings/` — React settings UI
-  - `packages/core/` — game rules, RNG, rule engine, persistence (pure TS, no Electron/Babylon imports; unit-tested)
+- Layout:
+  - `apps/desktop/` — electron-vite app
+    - `src/main/` — Electron main process (windows, IPC, wiring LiveSource → RuleEngine → GameCore)
+    - `src/preload/` — `contextBridge` API exposed to renderers (`window.saf`)
+    - `src/renderer/game/` — Babylon scene + HTML overlay
+    - `src/renderer/settings/` — React settings UI
+  - `packages/core/` — game rules, RNG, rule engine (pure TS, no Electron/Babylon/Node-only imports; unit-tested)
   - `packages/live/` — `LiveSource` interface and implementations
+  - `packages/config/` — shared tsconfig
+  - Future: `apps/web/` (Next.js), `apps/api/` (NestJS)
 - Game logic in `packages/core` must be deterministic given a seeded RNG, so it can be unit-tested (Vitest).
-- Commands: not set up yet. Add install/dev/test/build commands here once the scaffold exists.
+- Workspace packages are consumed as TypeScript source (`"main": "src/index.ts"`); the desktop app bundles them. No separate build step for packages.
+- Renderers get `contextIsolation: true`, `nodeIntegration: false`; everything they need goes through the preload API.
+
+## Commands
+
+```bash
+pnpm install          # install all workspaces
+pnpm dev              # run the desktop app in dev mode (electron-vite, HMR)
+pnpm test             # Vitest across packages
+pnpm typecheck        # tsc --noEmit across workspaces
+pnpm build            # bundle main/preload/renderers
+pnpm --filter @saf/desktop dist   # package installers for the current OS (electron-builder)
+```
+
+Releases: push a tag `v*` → GitHub Actions builds Windows and macOS installers and attaches them to a draft release.

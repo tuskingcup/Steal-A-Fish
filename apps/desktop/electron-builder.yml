@@ -1,0 +1,32 @@
+appId: com.tuskingcup.stealafish
+productName: Steal A Fish
+directories:
+  buildResources: build
+  output: release/${version}
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - "**/*.node"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-${os}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+mac:
+  target:
+    - target: dmg
+      arch: [universal]
+  category: public.app-category.games
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  # Unsigned until an Apple Developer ID is set up; users must right-click → Open.
+  identity: null
+linux:
+  target: [AppImage]
+publish: null
