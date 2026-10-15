@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { BrowserWindow, app, clipboard, ipcMain, shell } from "electron";
-import { mathRandomRng, RoundGame, RuleEngine, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
+import { mathRandomRng, pickLucky, RoundGame, RuleEngine, type CastAction, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
-import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type RankedPlayer, type SimGiftInput } from "../shared/api";
+import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type LuckyEvent, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
 import { startOverlay } from "./overlay";
 
@@ -51,19 +51,48 @@ function joinRound(viewer: Viewer): void {
   sendRound();
 }
 
+/** Likes and gifts are a clear wish to play: their senders join automatically, so nothing is wasted. */
+function ensureJoined(viewer: Viewer): void {
+  if (game.state().phase === "open" && !game.isPlaying(viewer.userId)) joinRound(viewer);
+}
+
+function castFor(viewer: Viewer, action: CastAction, times: number): void {
+  const boost = action.bait ? 1.5 : 1;
+  emitCatches(game.cast(viewer.userId, action.count * times, Date.now(), boost, { minRarity: action.minRarity, minPoints: action.minPoints }));
+}
+
 /** Turn a fired rule into game state changes. */
 function apply(fired: FiredAction): void {
   const { action, viewer, times } = fired;
   const now = Date.now();
   switch (action.type) {
     case "cast":
-    case "net": {
-      // A gift is a clear wish to play: gifters join automatically, so no gift is wasted.
-      if (game.state().phase === "open" && !game.isPlaying(viewer.userId)) joinRound(viewer);
-      const boost = action.type === "cast" && action.bait ? 1.5 : 1;
-      emitCatches(game.cast(viewer.userId, action.count * times, now, boost));
+      ensureJoined(viewer);
+      castFor(viewer, action, times);
       break;
-    }
+    case "net":
+      ensureJoined(viewer);
+      emitCatches(game.cast(viewer.userId, action.count * times, now));
+      break;
+    case "lucky":
+      ensureJoined(viewer);
+      if (!game.isPlaying(viewer.userId)) break;
+      for (let i = 0; i < times; i++) {
+        const pick = pickLucky(mathRandomRng, action.options);
+        sendToGame(IPC.gameLucky, { userId: viewer.userId, name: displayName(viewer), label: pick.label ?? "" } satisfies LuckyEvent);
+        castFor(viewer, pick.cast, 1);
+      }
+      break;
+    case "steal":
+      ensureJoined(viewer);
+      for (let i = 0; i < times; i++) {
+        if (mathRandomRng.next() >= action.successRate) continue;
+        const stolen = game.steal(viewer.userId);
+        if (!stolen) break;
+        sendToGame(IPC.gameSteal, stolen);
+        sendPodium();
+      }
+      break;
     case "frenzy":
       game.frenzy(now + action.durationSec * 1000, action.rareMultiplier);
       break;
@@ -161,7 +190,10 @@ app.whenReady().then(async () => {
   const engine = new RuleEngine({ rules: [] });
   const rules = new RulesStore(
     join(app.getPath("userData"), "rules.json"),
-    (config) => engine.setConfig(config),
+    (config) => {
+      engine.setConfig(config);
+      broadcast(IPC.rulesChanged, config);
+    },
     (message) => console.error(message),
   );
   engine.setConfig(rules.get());

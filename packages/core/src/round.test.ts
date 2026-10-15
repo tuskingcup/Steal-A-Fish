@@ -86,4 +86,42 @@ describe("RoundGame", () => {
     g.start(200);
     expect(g.standings()).toEqual([]);
   });
+
+  it("gives gift casts their guaranteed rarity and points", () => {
+    const g = newGame();
+    g.start(0);
+    g.join("a", "A", 0);
+    for (const e of g.cast("a", 50, 10, 1, { minRarity: "epic", minPoints: 700 })) {
+      expect(["epic", "legendary", "mythic"]).toContain(e.fish.rarity);
+      expect(e.fish.price).toBeGreaterThanOrEqual(700);
+    }
+  });
+
+  it("has no free casts by default: only likes and gifts cast", () => {
+    const g = new RoundGame(createSeededRng(5));
+    g.start(0);
+    g.join("a", "A", 0);
+    expect(g.tick(120_000).catches).toHaveLength(0);
+  });
+
+  it("steals a random fish from #1, or from #2 when the thief is #1", () => {
+    const g = newGame();
+    g.start(0);
+    g.join("rich", "Rich", 0);
+    g.join("thief", "Thief", 0);
+    g.join("third", "Third", 0);
+    expect(g.steal("thief")).toBeNull(); // nobody has anything yet
+    g.cast("rich", 5, 1, 1, { minPoints: 1_000 });
+    g.cast("third", 1, 1, 1, { minPoints: 10 });
+    const before = g.standings();
+    const steal = g.steal("thief")!;
+    expect(steal.victim.userId).toBe("rich");
+    expect(steal.thief.totalValue).toBe(steal.fish.price);
+    expect(steal.victim.totalValue).toBe(before.find((r) => r.userId === "rich")!.points - steal.fish.price);
+    const after = g.standings();
+    expect(after.find((r) => r.userId === "rich")!.fish).toBe(4);
+    expect(after.find((r) => r.userId === "thief")!.fish).toBe(1);
+    // The richest player robs the runner-up instead of themselves.
+    expect(g.steal("rich")!.victim.userId).not.toBe("rich");
+  });
 });

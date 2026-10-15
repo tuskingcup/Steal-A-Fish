@@ -1,4 +1,4 @@
-import type { Action, LiveEvent, MutationId, Rarity, RoundPhase, SizeClass } from "@saf/core";
+import type { Action, LiveEvent, MutationId, Rarity, RoundPhase, SizeClass, Trigger } from "@saf/core";
 
 /** All player-facing Thai text lives here. */
 export const th = {
@@ -6,6 +6,8 @@ export const th = {
   hostName: "เจ้าของท่าเรือ",
   newChampion: "ขึ้นอันดับ 1 แล้ว!",
   joinHint: "พิมพ์ 1 ในแชทเพื่อร่วมเล่น",
+  /** Round-bar hint: how fishing works. */
+  likeHint: (likes: number) => `กดใจ ${likes} ครั้ง = ตกปลา 1 ครั้ง · ส่งของขวัญ = การันตีแต้ม`,
   joinNextHint: "พิมพ์ 1 เพื่อจองรอบหน้า",
   joined: "ร่วมเล่นรอบนี้แล้ว!",
   queuedNext: "จองที่รอบหน้าแล้ว",
@@ -73,7 +75,16 @@ export const th = {
   startRound: "เริ่มรอบใหม่ทันที",
   endRound: "จบรอบตอนนี้",
   simJoin: "คอมเมนต์ 1 (ร่วมเล่น)",
-  roundRules: "รอบละ 5 นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · ทุกคนที่ร่วมเหวี่ยงเบ็ดฟรีทุก 30 วิ · ของขวัญ = เหวี่ยงเพิ่ม (ส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากมูลค่ารวมของปลาทุกตัวที่ตกได้",
+  roundRules: "รอบละ 5 นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · กดใจครบตามที่ตั้งไว้ = ตกปลา 1 ครั้ง · ของขวัญ = ตกปลาแบบการันตีแต้ม (กดใจหรือส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากแต้มรวมของปลาทุกตัวที่ตกได้",
+  likesPerCast: "กดใจกี่ครั้ง = ตกปลา 1 ครั้ง (นับแยกแต่ละคน)",
+  likesPerCastSaved: "บันทึกแล้ว",
+  giftTable: "ของขวัญ → สิ่งที่ได้",
+  giftTableHint: "จับคู่ของขวัญตามจำนวนเหรียญ (ของขวัญราคาใกล้กันได้ผลเท่ากัน) ยกเว้นน้ำหอมกับใจส้มที่จับคู่ตามชื่อของขวัญ · แก้ได้ในกฎด้านล่าง",
+  stole: "ขโมย",
+  from: "จาก",
+  luckyGot: "ใจส้มสุ่มได้",
+  /** Names of the gift tiers a lucky draw can land on (by option label). */
+  luckyTier: { rose: "กุหลาบ", fingerHeart: "มินิฮาร์ท", rosa: "โรซ่า", doughnut: "โดนัท", handHearts: "อุ้มใจ" } as Record<string, string>,
   dropRates: "อัตราการได้ปลา (ต่อการเหวี่ยง 1 ครั้ง)",
   mutationRates: "โอกาสกลายพันธุ์ (ซ้อนกันได้)",
   sizeRates: "ขนาดตัว (ส่วนใหญ่ขนาดปกติ)",
@@ -108,11 +119,13 @@ export function describeAction(action: Action, times: number): string {
   const x = times > 1 ? ` ×${times}` : "";
   switch (action.type) {
     case "cast":
-      return `เหวี่ยงเบ็ด ×${action.count * times}${action.bait ? " (เหยื่อพิเศษ)" : ""}`;
+      return `ตกปลา ×${action.count * times}${describeGuarantee(action)}${action.bait ? " (เหยื่อพิเศษ)" : ""}`;
+    case "lucky":
+      return `สุ่ม: ${action.options.map((o) => `${luckyName(o.label)} ${Math.round((o.weight / action.options.reduce((s, x) => s + x.weight, 0)) * 100)}%`).join(" · ")}${x}`;
     case "net":
       return `อวนลาก ${action.count} ตัว${x}`;
     case "steal":
-      return `ขโมยปลา (สำเร็จ ${Math.round(action.successRate * 100)}%)${x}`;
+      return `ขโมยปลา 1 ตัวแบบสุ่มจากอันดับ 1${action.successRate < 1 ? ` (สำเร็จ ${Math.round(action.successRate * 100)}%)` : ""}${x}`;
     case "guard":
       return `แมวเฝ้าตู้ ${action.durationSec} วิ${x}`;
     case "frenzy":
@@ -121,6 +134,34 @@ export function describeAction(action: Action, times: number): string {
       return "แสดงสมุดปลา";
     case "boost":
       return `ตู้ผลิตเงิน ×${action.multiplier} ${action.durationSec} วิ`;
+  }
+}
+
+/** " · การันตีหายาก+ · อย่างน้อย 150 แต้ม/ตัว" */
+function describeGuarantee(action: { minRarity?: Rarity; minPoints?: number }): string {
+  const parts: string[] = [];
+  if (action.minRarity && action.minRarity !== "common") parts.push(`การันตี${rarityTh[action.minRarity]}ขึ้นไป`);
+  if (action.minPoints) parts.push(`อย่างน้อย ${thNumber.format(action.minPoints)} แต้ม/ตัว`);
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
+}
+
+const luckyName = (label?: string) => (label && th.luckyTier[label]) || label || "?";
+
+/** "ส่งของขวัญ 10 เหรียญขึ้นไป", "ส่ง Perfume", "กดใจ 50 ครั้ง (นับแยกแต่ละคน)". */
+export function describeTrigger(trigger: Trigger): string {
+  switch (trigger.type) {
+    case "gift":
+      if (trigger.giftId !== undefined) return `ของขวัญ #${trigger.giftId}`;
+      if (trigger.giftName !== undefined) return `ของขวัญ "${trigger.giftName}"`;
+      return `ของขวัญ ${trigger.minDiamonds} เหรียญขึ้นไป`;
+    case "likes":
+      return `กดใจ ${thNumber.format(trigger.every)} ครั้ง${trigger.perViewer ? " (นับแยกแต่ละคน)" : " (รวมทั้งห้อง)"}`;
+    case "comment":
+      return `คอมเมนต์ ${trigger.command}`;
+    case "follow":
+      return "ติดตาม";
+    case "share":
+      return "แชร์";
   }
 }
 

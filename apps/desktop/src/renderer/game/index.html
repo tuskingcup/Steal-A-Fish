@@ -26,6 +26,8 @@
     /* Points popping up over a catcher's head. */
     .pop { position: absolute; left: 0; top: 0; font-size: 18px; font-weight: 900; color: #FFE27A; white-space: nowrap; pointer-events: none; text-shadow: 0 2px 0 #0009, 0 0 6px #000a; z-index: 2; }
     .pop.big { font-size: 26px; color: var(--rc, #FFE27A); text-shadow: 0 2px 0 #000b, 0 0 12px var(--rc, #FFC23D); }
+    .pop.steal { color: #7CFFB0; text-shadow: 0 2px 0 #000b, 0 0 12px #2BD27A; }
+    .pop.robbed { color: #FF6B6B; text-shadow: 0 2px 0 #000b, 0 0 12px #FF3B3B; }
     /* Rarity colours (shared by feed, cards, summary). */
     .r-common { --rc: #C9D1D9; } .r-uncommon { --rc: #6FD08C; } .r-rare { --rc: #4FA3FF; }
     .r-epic { --rc: #B47CFF; } .r-legendary { --rc: #FFB52E; } .r-mythic { --rc: #FF5C8A; }
@@ -37,6 +39,7 @@
     #roundbar .clock { color: #FFC23D; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: center; }
     #roundbar .clock.low { color: #FF5C5C; }
     #joinhint { font-size: 15px; font-weight: 700; color: #071C29; background: #FFC23D; border-radius: 10px; padding: 4px 12px; align-self: flex-start; box-shadow: 0 2px 0 #0006; }
+    #joinhint small { display: block; font-size: 12px; font-weight: 600; }
 
     #card { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: 82%; max-width: 440px; text-align: center; pointer-events: none;
       background: #071C29F0; border: 3px solid var(--rc); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 0 28px var(--rc); display: none; }

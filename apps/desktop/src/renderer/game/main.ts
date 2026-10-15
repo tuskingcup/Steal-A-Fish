@@ -1,4 +1,4 @@
-import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary } from "@saf/core";
+import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary, type RulesConfig } from "@saf/core";
 import { fishLengthMeters } from "./reveal";
 import { finishFor, isDense } from "./fishModels";
 import { createPondScene } from "./scene";
@@ -37,6 +37,15 @@ function push(html: string): void {
 
 let round: RoundState = { phase: "idle", round: 0, endsAt: null, players: 0 };
 
+/** How many of their own likes a viewer needs for one cast (from rules.json), for the hint. */
+let likesPerCast: number | null = null;
+function readLikesPerCast(config: RulesConfig): void {
+  const rule = config.rules.find((r) => r.enabled && r.trigger.type === "likes" && r.trigger.perViewer && r.action.type === "cast");
+  likesPerCast = rule && rule.trigger.type === "likes" ? rule.trigger.every : null;
+}
+void window.saf.getRules().then(readLikesPerCast);
+window.saf.onRulesChanged(readLikesPerCast);
+
 function renderRoundBar(): void {
   const left = round.endsAt === null ? 0 : round.endsAt - Date.now();
   const clock =
@@ -46,7 +55,9 @@ function renderRoundBar(): void {
     `<span class="pill">${esc(th.round(Math.max(round.round, 1)))}</span>` +
     `<span class="pill clock${low}">${esc(clock)}</span>` +
     `<span class="pill">${esc(th.players(round.players))}</span>`;
-  joinhint.textContent = round.phase === "open" ? th.joinHint : th.joinNextHint;
+  const hint = round.phase === "open" ? th.joinHint : th.joinNextHint;
+  const html = `${esc(hint)}${likesPerCast ? `<small>${esc(th.likeHint(likesPerCast))}</small>` : ""}`;
+  if (joinhint.innerHTML !== html) joinhint.innerHTML = html;
 }
 setInterval(renderRoundBar, 250);
 renderRoundBar();
@@ -77,17 +88,36 @@ window.saf.onJoined((e) => {
 
 // ---------- Catches: feed lines and a display queue of catch cards ----------
 
-/** Big catches get a card. Epic+ jump the queue; the queue is capped so it never lags far behind. */
-const cardQueue: CatchEvent[] = [];
+/** Cards for big catches and steals. Urgent ones jump the queue; it is capped so it never lags far behind. */
+interface CardItem {
+  rarity: Rarity;
+  html: string;
+  urgent: boolean;
+}
+const cardQueue: CardItem[] = [];
 let cardBusy = false;
 const CARD_MS = 2600;
 const MAX_QUEUE = 6;
 
-function queueCard(e: CatchEvent): void {
-  if (rarityRank(e.fish.rarity) >= rarityRank("epic")) cardQueue.unshift(e);
-  else cardQueue.push(e);
+function queueCardItem(item: CardItem): void {
+  if (item.urgent) cardQueue.unshift(item);
+  else cardQueue.push(item);
   while (cardQueue.length > MAX_QUEUE) cardQueue.pop();
   if (!cardBusy) showNextCard();
+}
+
+function queueCard(e: CatchEvent): void {
+  queueCardItem({
+    rarity: e.fish.rarity,
+    urgent: rarityRank(e.fish.rarity) >= rarityRank("epic"),
+    html:
+      `<div class="who"><b>@${esc(e.name)}</b> ${esc(th.caught)}</div>` +
+      `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</div>` +
+      `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
+      `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
+      `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
+      (e.personalBest ? `<div class="best">${esc(th.newBest)}</div>` : ""),
+  });
 }
 
 function showNextCard(): void {
@@ -96,23 +126,17 @@ function showNextCard(): void {
     setTimeout(showNextCard, 500);
     return;
   }
-  const e = cardQueue.shift();
-  if (!e) {
+  const item = cardQueue.shift();
+  if (!item) {
     cardBusy = false;
     card.className = "";
     return;
   }
   cardBusy = true;
-  card.className = `r-${e.fish.rarity}`;
-  card.innerHTML =
-    `<div class="who"><b>@${esc(e.name)}</b> ${esc(th.caught)}</div>` +
-    `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</div>` +
-    `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
-    `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
-    `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
-    (e.personalBest ? `<div class="best">${esc(th.newBest)}</div>` : "");
+  card.className = `r-${item.rarity}`;
+  card.innerHTML = item.html;
   void card.offsetWidth; // restart the pop animation
-  card.className = `r-${e.fish.rarity} show`;
+  card.className = `r-${item.rarity} show`;
   setTimeout(showNextCard, CARD_MS);
 }
 
@@ -131,8 +155,9 @@ window.saf.onCatch((e) => {
   crew.join({ userId: e.userId, name: e.name });
   crew.cast(e.userId);
   totals.set(e.userId, e.totalValue);
-  popPoints(e);
+  // Small catches only add to the player's total (on their name tag); nothing else shows.
   if (!isBigCatch(e)) return;
+  popText(e.userId, `+${formatPointsShort(e.fish.price)}`, `pop r-${e.fish.rarity} big`);
   push(
     `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</span> ` +
       `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatPoints(e.fish.price))}</span>`,
@@ -227,8 +252,35 @@ function renderReveal(): void {
 setInterval(renderReveal, 100);
 
 // Other actions (frenzy, collection, …) still show in the feed; casts are shown as catches.
+// Steals: always news. The fish changes hands, both totals move, and everyone sees it.
+window.saf.onSteal((e) => {
+  crew.join({ userId: e.thief.userId, name: e.thief.name });
+  totals.set(e.thief.userId, e.thief.totalValue);
+  totals.set(e.victim.userId, e.victim.totalValue);
+  const points = formatPointsShort(e.fish.price);
+  popText(e.thief.userId, `🕵️ +${points}`, "pop steal big");
+  popText(e.victim.userId, `−${points}`, "pop robbed big");
+  const fish = fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass);
+  push(`🕵️ <b>@${esc(e.thief.name)}</b> ${esc(th.stole)} <span class="rarity r-${e.fish.rarity}">${esc(fish)}</span> ${esc(th.from)} <b>@${esc(e.victim.name)}</b>!`);
+  queueCardItem({
+    rarity: e.fish.rarity,
+    urgent: true,
+    html:
+      `<div class="who">🕵️ <b>@${esc(e.thief.name)}</b> ${esc(th.stole)}</div>` +
+      `<div class="name">${esc(fish)}</div>` +
+      `<div class="who">${esc(th.from)} <b>@${esc(e.victim.name)}</b></div>` +
+      `<div class="price">${esc(formatPoints(e.fish.price))}</div>`,
+  });
+});
+
+window.saf.onLucky((e) => {
+  push(`🧡 <b>@${esc(e.name)}</b> ${esc(th.luckyGot)} <b>${esc(th.luckyTier[e.label] ?? e.label)}</b>!`);
+});
+
 window.saf.onGameAction((fired) => {
-  if (fired.action.type === "cast" || fired.action.type === "net") return;
+  const t = fired.action.type;
+  // Casts, draws and steals show through their results (catches, onLucky, onSteal).
+  if (t === "cast" || t === "net" || t === "lucky" || t === "steal") return;
   const who = fired.viewer.uniqueId || fired.viewer.nickname;
   push(`<b>@${esc(who)}</b> → ${esc(describeAction(fired.action, fired.times))}`);
 });
@@ -397,14 +449,14 @@ const pops: Pop[] = [];
 const POP_MS = 1700;
 const MAX_POPS = 80;
 
-/** "+1,250" rising from the catcher's head; bigger and in rarity colour for better fish. */
-function popPoints(e: CatchEvent): void {
+/** Text rising from a player's head ("+1,250" for a big catch, "−300" when robbed). */
+function popText(userId: string, text: string, className: string): void {
   const el = document.createElement("div");
-  el.className = `pop r-${e.fish.rarity}${isBigCatch(e) ? " big" : ""}`;
-  el.textContent = `+${formatPointsShort(e.fish.price)}`;
+  el.className = className;
+  el.textContent = text;
   el.style.display = "none";
   tagLayer.appendChild(el);
-  pops.push({ el, userId: e.userId, born: performance.now() });
+  pops.push({ el, userId, born: performance.now() });
   while (pops.length > MAX_POPS) pops.shift()!.el.remove();
 }
 

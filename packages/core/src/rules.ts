@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { LiveEvent, Viewer } from "./events";
+import { RARITIES } from "./fish";
+import type { Rng } from "./rng";
 
 // ---------- Config schema (rules.json) ----------
 
@@ -7,23 +9,47 @@ const giftTrigger = z
   .object({
     type: z.literal("gift"),
     giftId: z.number().int().optional(),
+    /** The gift's name as the live source reports it (case-insensitive), e.g. "Perfume". */
+    giftName: z.string().min(1).optional(),
     minDiamonds: z.number().int().nonnegative().optional(),
   })
-  .refine((t) => t.giftId !== undefined || t.minDiamonds !== undefined, {
-    message: "gift trigger needs giftId or minDiamonds",
+  .refine((t) => t.giftId !== undefined || t.giftName !== undefined || t.minDiamonds !== undefined, {
+    message: "gift trigger needs giftId, giftName or minDiamonds",
   });
 
-const likesTrigger = z.object({ type: z.literal("likes"), every: z.number().int().positive() });
+/**
+ * Likes. `perViewer: true` counts each viewer's own likes (every N of *their* likes fires the
+ * action for them); otherwise the whole room's likes count together.
+ */
+const likesTrigger = z.object({ type: z.literal("likes"), every: z.number().int().positive(), perViewer: z.boolean().default(false) });
 const commentTrigger = z.object({ type: z.literal("comment"), command: z.string().min(1) });
 const followTrigger = z.object({ type: z.literal("follow") });
 const shareTrigger = z.object({ type: z.literal("share") });
 
 export const triggerSchema = z.union([giftTrigger, likesTrigger, commentTrigger, followTrigger, shareTrigger]);
 
+/**
+ * Cast `count` times. `minRarity` guarantees at least that rarity; `minPoints` guarantees each
+ * fish is worth at least that many points (gifts use both, so a gift is never a dud).
+ */
+const castAction = z.object({
+  type: z.literal("cast"),
+  count: z.number().int().positive().default(1),
+  bait: z.string().optional(),
+  minRarity: z.enum(RARITIES).optional(),
+  minPoints: z.number().int().nonnegative().optional(),
+});
+
 export const actionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("cast"), count: z.number().int().positive().default(1), bait: z.string().optional() }),
+  castAction,
+  /** A lucky draw: one of the options is picked at random (by weight) and cast. */
+  z.object({
+    type: z.literal("lucky"),
+    options: z.array(z.object({ weight: z.number().positive(), label: z.string().optional(), cast: castAction })).min(1),
+  }),
   z.object({ type: z.literal("net"), count: z.number().int().positive() }),
-  z.object({ type: z.literal("steal"), successRate: z.number().min(0).max(1) }),
+  /** Steal one random fish from the #1 player (from #2 if the thief is #1). */
+  z.object({ type: z.literal("steal"), successRate: z.number().min(0).max(1).default(1) }),
   z.object({ type: z.literal("guard"), durationSec: z.number().positive() }),
   z.object({
     type: z.literal("frenzy"),
@@ -43,10 +69,15 @@ export const ruleSchema = z.object({
   action: actionSchema,
 });
 
-export const rulesConfigSchema = z.object({ rules: z.array(ruleSchema) });
+export const rulesConfigSchema = z.object({
+  /** Bumped when the default rules change shape; older files are replaced (and backed up). */
+  version: z.number().int().optional(),
+  rules: z.array(ruleSchema),
+});
 
 export type Trigger = z.infer<typeof triggerSchema>;
 export type Action = z.infer<typeof actionSchema>;
+export type CastAction = z.infer<typeof castAction>;
 export type Rule = z.infer<typeof ruleSchema>;
 export type RulesConfig = z.infer<typeof rulesConfigSchema>;
 
@@ -73,6 +104,7 @@ export interface FiredAction {
 export class RuleEngine {
   private rules: Rule[];
   private likeCounter = 0;
+  private readonly viewerLikes = new Map<string, number>();
   private readonly seenEventIds = new Set<string>();
   private readonly firedOnce = new Set<string>();
 
@@ -82,6 +114,11 @@ export class RuleEngine {
 
   setConfig(config: RulesConfig): void {
     this.rules = config.rules;
+  }
+
+  /** Every like this viewer has sent (for "N more likes to your next cast" hints). */
+  viewerLikeCount(userId: string): number {
+    return this.viewerLikes.get(userId) ?? 0;
   }
 
   handle(event: LiveEvent): FiredAction[] {
@@ -104,16 +141,20 @@ export class RuleEngine {
 
     switch (event.type) {
       case "gift": {
-        const best = pickGiftRule(enabled, event.giftId, event.diamonds);
+        const best = pickGiftRule(enabled, event.giftId, event.diamonds, event.giftName);
         return best ? [{ ...base, rule: best, action: best.action, times: event.repeatCount }] : [];
       }
       case "like": {
         const before = this.likeCounter;
         this.likeCounter += event.likeCount;
+        const mineBefore = this.viewerLikes.get(event.viewer.userId) ?? 0;
+        const mine = mineBefore + event.likeCount;
+        this.viewerLikes.set(event.viewer.userId, mine);
         return enabled.flatMap((rule) => {
           if (rule.trigger.type !== "likes") return [];
           const every = rule.trigger.every;
-          const times = Math.floor(this.likeCounter / every) - Math.floor(before / every);
+          const [from, to] = rule.trigger.perViewer ? [mineBefore, mine] : [before, this.likeCounter];
+          const times = Math.floor(to / every) - Math.floor(from / every);
           return times > 0 ? [{ ...base, rule, action: rule.action, times }] : [];
         });
       }
@@ -134,11 +175,22 @@ export class RuleEngine {
   }
 }
 
+/** Pick one option of a lucky draw, by weight. */
+export function pickLucky<T extends { weight: number }>(rng: Rng, options: readonly T[]): T {
+  const total = options.reduce((s, o) => s + o.weight, 0);
+  let r = rng.next() * total;
+  for (const o of options) {
+    r -= o.weight;
+    if (r < 0) return o;
+  }
+  return options[options.length - 1]!;
+}
+
 /**
- * Most specific gift rule wins: an exact giftId beats any minDiamonds rule;
- * among minDiamonds rules the highest threshold that is met wins.
+ * Most specific gift rule wins: an exact giftId beats a giftName, which beats any minDiamonds
+ * rule; among minDiamonds rules the highest threshold that is met wins.
  */
-export function pickGiftRule(rules: Rule[], giftId: number, diamonds: number): Rule | undefined {
+export function pickGiftRule(rules: Rule[], giftId: number, diamonds: number, giftName = ""): Rule | undefined {
   let best: Rule | undefined;
   let bestScore = -1;
   for (const rule of rules) {
@@ -147,6 +199,8 @@ export function pickGiftRule(rules: Rule[], giftId: number, diamonds: number): R
     let score = -1;
     if (t.giftId !== undefined) {
       if (t.giftId === giftId) score = Number.MAX_SAFE_INTEGER;
+    } else if (t.giftName !== undefined) {
+      if (t.giftName.trim().toLowerCase() === giftName.trim().toLowerCase()) score = Number.MAX_SAFE_INTEGER - 1;
     } else if (t.minDiamonds !== undefined && diamonds >= t.minDiamonds) {
       score = t.minDiamonds;
     }

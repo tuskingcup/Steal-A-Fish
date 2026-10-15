@@ -127,6 +127,8 @@ export interface CastOptions {
   pity: number;
   /** Multiplies the chance of Rare and above (frenzy, special bait). 1 = normal. */
   rareBoost?: number;
+  /** Guarantee at least this rarity (gifts). */
+  minRarity?: Rarity;
 }
 
 export interface CastResult {
@@ -138,9 +140,10 @@ export interface CastResult {
 export function rollCatch(rng: Rng, opts: CastOptions): CastResult {
   const forceRare = opts.pity + 1 >= PITY_CASTS;
   const boost = opts.rareBoost ?? 1;
+  const floor = RARITIES.indexOf(opts.minRarity ?? "common");
   const rarity = pickWeighted(
     rng,
-    RARITIES.filter((r) => !forceRare || isRarePlus(r)).map((r) => [r, RARITY_WEIGHTS[r] * (isRarePlus(r) ? boost : 1)] as const),
+    RARITIES.filter((r, i) => (!forceRare || isRarePlus(r)) && i >= floor).map((r) => [r, RARITY_WEIGHTS[r] * (isRarePlus(r) ? boost : 1)] as const),
   );
   const species = pickWeighted(
     rng,

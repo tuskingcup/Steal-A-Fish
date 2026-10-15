@@ -1,4 +1,4 @@
-import type { CatchEvent, FiredAction, LiveEvent, RoundState, RoundSummary, RulesConfig } from "@saf/core";
+import type { CatchEvent, FiredAction, LiveEvent, RoundState, RoundSummary, RulesConfig, StealEvent } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 
 /** IPC channel names. Keep main, preload and renderers in sync through this file. */
@@ -19,6 +19,9 @@ export const IPC = {
   gameCatch: "game:catch",
   gameJoined: "game:joined",
   gameSummary: "game:summary",
+  gameSteal: "game:steal",
+  gameLucky: "game:lucky",
+  rulesChanged: "rules:changed",
   roundStart: "round:start",
   roundEnd: "round:end",
   logEntry: "log:entry",
@@ -51,6 +54,14 @@ export interface JoinedEvent {
   queued: boolean;
 }
 
+/** A lucky-draw gift (ใจส้ม) picked one of the gift tiers for this viewer. */
+export interface LuckyEvent {
+  userId: string;
+  name: string;
+  /** The picked option's label (a key into the Thai gift-tier names). */
+  label: string;
+}
+
 export type SaveRulesResult = { ok: true } | { ok: false; error: string };
 
 export interface LogEntry {
@@ -81,6 +92,10 @@ export interface SafApi {
   onRound(listener: (state: RoundState) => void): () => void;
   onCatch(listener: (event: CatchEvent) => void): () => void;
   onJoined(listener: (event: JoinedEvent) => void): () => void;
+  onSteal(listener: (event: StealEvent) => void): () => void;
+  onLucky(listener: (event: LuckyEvent) => void): () => void;
+  /** rules.json changed (saved in settings or edited by hand). */
+  onRulesChanged(listener: (config: RulesConfig) => void): () => void;
   onSummary(listener: (summary: RoundSummary) => void): () => void;
   /** The leaderboard overlay's link for TikTok LIVE Studio (null if no local port was free). */
   overlayUrl(): Promise<string | null>;

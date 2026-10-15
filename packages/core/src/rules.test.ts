@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GiftEvent, LiveEvent, Viewer } from "./events";
-import { RuleEngine, parseRulesConfig } from "./rules";
+import { RuleEngine, parseRulesConfig, pickLucky } from "./rules";
+import { createSeededRng } from "./rng";
 import { defaultRulesConfig } from "./defaultRules";
 
 const viewer: Viewer = { userId: "u1", uniqueId: "nong_ploy", nickname: "Ploy" };
@@ -90,5 +91,47 @@ describe("parseRulesConfig", () => {
 
   it("accepts the default rules", () => {
     expect(() => parseRulesConfig(defaultRulesConfig)).not.toThrow();
+  });
+
+  it("counts each viewer's own likes for per-viewer rules", () => {
+    const engine = new RuleEngine(parseRulesConfig({ rules: [{ id: "cast", trigger: { type: "likes", every: 50, perViewer: true }, action: { type: "cast", count: 1 } }] }));
+    const a: Viewer = { userId: "a", uniqueId: "a", nickname: "A" };
+    const b: Viewer = { userId: "b", uniqueId: "b", nickname: "B" };
+    const like = (v: Viewer, likeCount: number): LiveEvent => ({ type: "like", eventId: id(), at: 0, viewer: v, likeCount });
+    expect(engine.handle(like(a, 30))).toHaveLength(0);
+    expect(engine.handle(like(b, 30))).toHaveLength(0); // the room has 60, but nobody has 50 of their own
+    const fired = engine.handle(like(a, 25));
+    expect(fired.map((f) => [f.viewer.userId, f.times])).toEqual([["a", 1]]);
+    expect(engine.handle(like(b, 120)).map((f) => f.times)).toEqual([3]); // 30 + 120 = 150 → three casts
+  });
+
+  it("matches gifts by name between giftId and value thresholds", () => {
+    const engine = new RuleEngine(
+      parseRulesConfig({
+        rules: [
+          { id: "by-value", trigger: { type: "gift", minDiamonds: 10 }, action: { type: "cast", count: 1 } },
+          { id: "by-name", trigger: { type: "gift", giftName: "Perfume" }, action: { type: "steal" } },
+          { id: "by-id", trigger: { type: "gift", giftId: 42 }, action: { type: "cast", count: 9 } },
+        ],
+      }),
+    );
+    const named = (giftId: number, giftName: string): GiftEvent => ({ ...gift(giftId, 20), giftName });
+    expect(engine.handle(named(1, "perfume")).map((f) => f.rule.id)).toEqual(["by-name"]); // case-insensitive
+    expect(engine.handle(named(42, "Perfume")).map((f) => f.rule.id)).toEqual(["by-id"]);
+    expect(engine.handle(named(2, "Doughnut")).map((f) => f.rule.id)).toEqual(["by-value"]);
+  });
+
+  it("ships default rules that parse, with likes casting per viewer", () => {
+    const parsed = parseRulesConfig(defaultRulesConfig);
+    expect(parsed.rules.find((r) => r.id === "likes-cast")?.trigger).toEqual({ type: "likes", every: 50, perViewer: true });
+  });
+});
+
+describe("pickLucky", () => {
+  it("picks options in proportion to their weight", () => {
+    const rng = createSeededRng(8);
+    const counts = { a: 0, b: 0 };
+    for (let i = 0; i < 20_000; i++) counts[pickLucky(rng, [{ weight: 3, k: "a" as const }, { weight: 1, k: "b" as const }]).k]++;
+    expect(counts.a / 20_000).toBeCloseTo(0.75, 1);
   });
 });

@@ -1,24 +1,41 @@
 import { useEffect, useState } from "react";
-import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, speciesPercents, type RoundState } from "@saf/core";
+import { MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, SIZE_CLASSES, SPECIES, speciesPercents, type RoundState, type Rule, type RulesConfig } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
-import { describeAction, describeEvent, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../../shared/strings.th";
+import { describeAction, describeEvent, describeTrigger, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../../shared/strings.th";
 
 /** Public drop table (shown to everyone: no hidden odds). */
 const PERCENTS = rarityPercents();
 const speciesChance = speciesPercents();
 const fmtPct = (p: number) => (p >= 1 ? p.toFixed(1) : p >= 0.01 ? p.toFixed(2) : p.toFixed(3));
 
-// Placeholder gifts for the simulator. Real ids come from the live gift list later.
+// Simulator gifts (ids as TikTok reports them; rules match by coin value or by name).
 const SIM_GIFTS: Array<SimGiftInput & { label: string }> = [
   { label: "กุหลาบ · 1", giftId: 5655, giftName: "Rose", diamonds: 1 },
   { label: "กุหลาบ ×5", giftId: 5655, giftName: "Rose", diamonds: 1, repeatCount: 5 },
-  { label: "ของขวัญ 10", giftId: 9001, giftName: "Gift 10", diamonds: 10 },
-  { label: "ของขวัญ 99", giftId: 9002, giftName: "Gift 99", diamonds: 99 },
-  { label: "ของขวัญ 199", giftId: 9003, giftName: "Gift 199", diamonds: 199 },
+  { label: "มินิฮาร์ท · 5", giftId: 5487, giftName: "Finger Heart", diamonds: 5 },
+  { label: "โรซ่า · 10", giftId: 8913, giftName: "Rosa", diamonds: 10 },
+  { label: "น้ำหอม · 20 (ขโมย)", giftId: 5658, giftName: "Perfume", diamonds: 20 },
+  { label: "โดนัท · 30", giftId: 5879, giftName: "Doughnut", diamonds: 30 },
+  { label: "อุ้มใจ · 100", giftId: 5660, giftName: "Hand Hearts", diamonds: 100 },
+  { label: "ใจส้ม (สุ่ม)", giftId: 7934, giftName: "Heart Me", diamonds: 1 },
 ];
 
 const MAX_LOG = 200;
+
+/** The per-viewer likes → cast rule's trigger, if there is one. */
+function likesRule(config: RulesConfig | null): { every: number } | null {
+  const rule = config?.rules.find((r) => r.trigger.type === "likes" && r.trigger.perViewer && r.action.type === "cast");
+  return rule && rule.trigger.type === "likes" ? rule.trigger : null;
+}
+
+/** Gift table order: likes first, then gifts by price, then the named specials. */
+function giftOrder(rule: Rule): number {
+  const t = rule.trigger;
+  if (t.type === "likes") return t.perViewer ? -2 : 1e9;
+  if (t.type !== "gift") return 1e9;
+  return t.minDiamonds ?? 1e6;
+}
 
 export function App() {
   const [state, setState] = useState<ConnectionState>({ status: "disconnected" });
@@ -31,9 +48,19 @@ export function App() {
   const [, setNow] = useState(Date.now());
   const [overlayUrl, setOverlayUrl] = useState<string | null | undefined>(undefined);
   const [copied, setCopied] = useState(false);
+  const [rules, setRules] = useState<RulesConfig | null>(null);
+  const [likesInput, setLikesInput] = useState("");
+  const [likesMsg, setLikesMsg] = useState("");
 
   useEffect(() => {
-    void window.saf.getRules().then((r) => setRulesText(JSON.stringify(r, null, 2)));
+    const showRules = (r: RulesConfig) => {
+      setRules(r);
+      setRulesText(JSON.stringify(r, null, 2));
+      const likes = likesRule(r);
+      if (likes) setLikesInput(String(likes.every));
+    };
+    void window.saf.getRules().then(showRules);
+    const offRules = window.saf.onRulesChanged(showRules);
     void window.saf.overlayUrl().then(setOverlayUrl);
     const offState = window.saf.onLiveState(setState);
     const offLog = window.saf.onLog((entry) => setLog((prev) => [entry, ...prev].slice(0, MAX_LOG)));
@@ -43,9 +70,23 @@ export function App() {
       offState();
       offLog();
       offRound();
+      offRules();
       clearInterval(clock);
     };
   }, []);
+
+  /** Change how many likes make one cast (the per-viewer likes → cast rule). */
+  async function saveLikesPerCast() {
+    const every = Math.round(Number(likesInput));
+    if (!rules || !Number.isFinite(every) || every < 1) return;
+    const next: RulesConfig = {
+      ...rules,
+      rules: rules.rules.map((r) => (r.trigger.type === "likes" && r.trigger.perViewer && r.action.type === "cast" ? { ...r, trigger: { ...r.trigger, every } } : r)),
+    };
+    const result = await window.saf.saveRules(next);
+    setLikesMsg(result.ok ? th.likesPerCastSaved : result.error);
+    setTimeout(() => setLikesMsg(""), 2000);
+  }
 
   async function saveRules() {
     let parsed: unknown;
@@ -108,6 +149,34 @@ export function App() {
       </section>
 
       <section>
+        <h2>{th.giftTable}</h2>
+        <label>
+          {th.likesPerCast}
+          <div className="row">
+            <input type="number" min={1} value={likesInput} onChange={(e) => setLikesInput(e.target.value)} style={{ width: 110 }} />
+            <button className="primary" onClick={() => void saveLikesPerCast()}>
+              {th.save}
+            </button>
+            {likesMsg && <span className="hint">{likesMsg}</span>}
+          </div>
+        </label>
+        <table className="rates">
+          <tbody>
+            {(rules?.rules ?? [])
+              .filter((r) => r.enabled && (r.trigger.type === "gift" || r.trigger.type === "likes"))
+              .sort((a, b) => giftOrder(a) - giftOrder(b))
+              .map((r, i) => (
+                <tr key={r.id ?? i}>
+                  <td>{describeTrigger(r.trigger)}</td>
+                  <td>{describeAction(r.action, 1)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+        <p className="hint">{th.giftTableHint}</p>
+      </section>
+
+      <section>
         <h2>{th.overlayHeading}</h2>
         {overlayUrl === undefined ? (
           <p className="hint">{th.overlayStarting}</p>
@@ -145,6 +214,7 @@ export function App() {
           ))}
         </div>
         <div className="row">
+          <button onClick={() => void window.saf.simulateLikes(likesRule(rules)?.every ?? 50)}>กดใจ ×{likesRule(rules)?.every ?? 50} (ตก 1 ครั้ง)</button>
           <button onClick={() => void window.saf.simulateLikes(1000)}>ไลค์ ×1,000</button>
           <button onClick={() => void window.saf.simulateLikes(10000)}>ไลค์ ×10,000</button>
           <button onClick={() => void window.saf.simulateComment("1")}>{th.simJoin}</button>

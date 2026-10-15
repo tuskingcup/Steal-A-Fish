@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { dirname } from "node:path";
-import { defaultRulesConfig, parseRulesConfig, type RulesConfig } from "@saf/core";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { dirname, join } from "node:path";
+import { defaultRulesConfig, parseRulesConfig, RULES_VERSION, type RulesConfig } from "@saf/core";
 
 /**
  * rules.json in userData. The settings UI and hand edits share this one file.
@@ -61,7 +61,16 @@ export class RulesStore {
       return defaultRulesConfig;
     }
     try {
-      return parseRulesConfig(JSON.parse(readFileSync(this.path, "utf8")));
+      const config = parseRulesConfig(JSON.parse(readFileSync(this.path, "utf8")));
+      const version = config.version ?? 1;
+      if (version < RULES_VERSION) {
+        // The game's rules changed shape (e.g. likes now cast per viewer, gift tiers): start from
+        // the new defaults, keeping the old file next to it.
+        copyFileSync(this.path, join(dirname(this.path), `rules.v${version}.backup.json`));
+        writeFileSync(this.path, JSON.stringify(defaultRulesConfig, null, 2) + "\n", "utf8");
+        return defaultRulesConfig;
+      }
+      return config;
     } catch (err) {
       this.onError(`rules.json is invalid, using defaults: ${String(err)}`);
       return defaultRulesConfig;
