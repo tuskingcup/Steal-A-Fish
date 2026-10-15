@@ -56,6 +56,11 @@ export interface CastGuarantee {
   maxPoints?: number;
 }
 
+/** The guarantee a cast rule carries (every bound it sets, so none is lost on the way). */
+export function guaranteeOf(action: { minRarity?: Rarity; maxRarity?: Rarity; minPoints?: number; maxPoints?: number }): CastGuarantee {
+  return { minRarity: action.minRarity, maxRarity: action.maxRarity, minPoints: action.minPoints, maxPoints: action.maxPoints };
+}
+
 /** The thief took one fish from the victim (the #1 player, or #2 when the thief was #1). */
 export interface StealEvent {
   round: number;

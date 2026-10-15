@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSeededRng } from "./rng";
-import { RoundGame, sumLog10, type RoundConfig } from "./round";
+import { guaranteeOf, RoundGame, sumLog10, type RoundConfig } from "./round";
+import { RuleEngine } from "./rules";
 import { defaultRulesConfig } from "./defaultRules";
 import { RARITIES } from "./fish";
 
@@ -150,6 +151,21 @@ describe("RoundGame", () => {
         const r = RARITIES.indexOf(e.fish.rarity);
         expect(r).toBeGreaterThanOrEqual(RARITIES.indexOf(action.minRarity ?? "common"));
         expect(r).toBeLessThanOrEqual(RARITIES.indexOf(action.maxRarity ?? "mythic"));
+      }
+    }
+  });
+
+  it("keeps a rose's fish within 50–600 points, end to end from the gift event", () => {
+    const engine = new RuleEngine(defaultRulesConfig);
+    const g = newGame();
+    g.start(0);
+    g.join("u", "U", 0);
+    for (let i = 0; i < 200; i++) {
+      const [fired] = engine.handle({ type: "gift", eventId: `rose${i}`, at: 0, viewer: { userId: "u", uniqueId: "u", nickname: "U" }, giftId: 5655, giftName: "Rose", diamonds: 1, repeatCount: 1 });
+      if (fired?.action.type !== "cast") throw new Error("rose should cast");
+      for (const e of g.cast("u", fired.action.count * fired.times, 1, 1, guaranteeOf(fired.action))) {
+        expect(e.fish.price).toBeGreaterThanOrEqual(50);
+        expect(e.fish.price).toBeLessThanOrEqual(600);
       }
     }
   });

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { BrowserWindow, app, clipboard, ipcMain, shell } from "electron";
-import { mathRandomRng, pickLucky, RoundGame, RuleEngine, type CastAction, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
+import { guaranteeOf, mathRandomRng, pickLucky, RoundGame, RuleEngine, type CastAction, type CatchEvent, type FiredAction, type LiveEvent, type Viewer } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
 import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type LuckyEvent, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
@@ -58,7 +58,7 @@ function ensureJoined(viewer: Viewer): void {
 
 function castFor(viewer: Viewer, action: CastAction, times: number): void {
   const boost = action.bait ? 1.5 : 1;
-  emitCatches(game.cast(viewer.userId, action.count * times, Date.now(), boost, { minRarity: action.minRarity, minPoints: action.minPoints }));
+  emitCatches(game.cast(viewer.userId, action.count * times, Date.now(), boost, guaranteeOf(action)));
 }
 
 /** Turn a fired rule into game state changes. */
