@@ -143,9 +143,10 @@ window.saf.onCatch((e) => {
   crew.join({ userId: e.userId, name: e.name });
   crew.cast(e.userId);
   totals.set(e.userId, e.totalValue);
-  // Small catches only add to the player's total (on their name tag); nothing else shows.
-  if (!isBigCatch(e)) return;
-  popText(e.userId, `+${formatPointsShort(e.fish.price)}`, `pop r-${e.fish.rarity} big`);
+  // Every catch pops "+points" over the catcher's head; only big catches get a feed line, card or reveal.
+  const big = isBigCatch(e);
+  popText(e.userId, `+${formatPointsShort(e.fish.price)}`, `pop r-${e.fish.rarity}${big ? " big" : ""}`);
+  if (!big) return;
   push(
     `<b>@${esc(e.name)}</b> ${esc(th.caught)} <span class="rarity r-${e.fish.rarity}">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</span> ` +
       `${esc(formatWeight(e.fish.weightLog10))} · <span class="coin">${esc(formatPoints(e.fish.price))}</span>`,

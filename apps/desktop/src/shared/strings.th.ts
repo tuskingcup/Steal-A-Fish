@@ -91,12 +91,8 @@ export const th = {
   noRealValue: "แต้มและปลาไม่มีมูลค่าจริง แลกเป็นเงินหรือของใด ๆ ไม่ได้ และโอนให้กันไม่ได้",
 
   // Leaderboard overlay for TikTok LIVE Studio (served by the app, settings shows the link).
-  overlayTitle: (round: number) => `🏆 อันดับแต้ม · รอบที่ ${round}`,
-  overlayEmpty: "พิมพ์ 1 ในแชทเพื่อร่วมเล่น",
-  overlayFinal: "สรุปผล",
-  overlayMore: (n: number) => `อีก ${n} คน · เลื่อนลงเพื่อดู`,
   overlayHeading: "Overlay อันดับแต้มสำหรับ TikTok LIVE Studio",
-  overlayHint: "ใน TikTok LIVE Studio: เพิ่มแหล่งที่มา → ลิงก์ (Link) → วางลิงก์นี้ · ขนาดแนะนำ 420 × 640 · แสดง 10 อันดับแรก ที่เหลือเลื่อนลงดูได้ (ถ้าไม่มีใครเลื่อน จะเลื่อนให้ดูเองช้า ๆ)",
+  overlayHint: "ใน TikTok LIVE Studio: เพิ่มแหล่งที่มา → ลิงก์ (Link) → วางลิงก์นี้ · ขนาด กว้าง 131 × สูง 368 · แสดง 10 อันดับแรก ที่เหลือเลื่อนลงดูได้ (ถ้าไม่มีใครเลื่อน จะเลื่อนให้ดูเองช้า ๆ)",
   overlayStarting: "กำลังเปิด overlay…",
   overlayFailed: "เปิด overlay ไม่ได้",
   copyLink: "คัดลอกลิงก์",
