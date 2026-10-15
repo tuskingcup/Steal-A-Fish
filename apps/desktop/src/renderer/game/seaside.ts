@@ -163,7 +163,7 @@ export interface Sea {
 
 /** Faceted sea: unshared triangles so each facet catches the sun separately; animated on the CPU. */
 export function createSea(scene: Scene): Sea {
-  const N = 72;
+  const N = 60;
   const x0 = -90;
   const z0 = -20;
   const size = 180;

@@ -151,10 +151,12 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
   };
 
   let time = 0;
+  let frame = 0;
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.1);
     time += dt;
-    sea.update(time);
+    // Waves at half rate: the CPU-side facet update is the scene's biggest per-frame cost.
+    if (frame++ % 2 === 0) sea.update(time);
     crew.update(camera, time, dt);
 
     let want = desiredPose();

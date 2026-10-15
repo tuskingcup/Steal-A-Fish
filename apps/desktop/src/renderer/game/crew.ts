@@ -5,16 +5,18 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import "@babylonjs/core/Meshes/instancedMesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
-import { CreateLines } from "@babylonjs/core/Meshes/Builders/linesBuilder";
+import { CreateLineSystem } from "@babylonjs/core/Meshes/Builders/linesBuilder";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { avatarFor, hashString, type Avatar } from "@saf/core";
-import { createFisherSprite, rotateY, STANCES, type FisherSprite, type Stance } from "./fisherSprite";
+import { createFisherSprite, pumpSpriteBakes, rotateY, STANCES, type FisherSprite, type Stance } from "./fisherSprite";
 import { flat, hash01, lowPolyMat } from "./materials";
 import type { Boat } from "./boat";
 import { beachHeight, DOCK_END, DOCK_TOP, PALMS, ROCKS, shorelineZ, waveHeight } from "./seaside";
@@ -46,12 +48,14 @@ const DOCK: Pose[] = [
   ]),
 ];
 
+const BEACH_SPOTS = 36;
+
 /** Standing spots along the waterline, nearest the dock first, clear of rocks and palms. */
 const BEACH: Pose[] = (() => {
   const spots: Pose[] = [];
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < 22; k++) {
     for (const side of [1, -1]) {
-      const x = side * (3.4 + k * 2.1);
+      const x = side * (3.4 + k * 1.7);
       const z = shorelineZ(x, 0.3);
       const clear =
         ROCKS.every(([rx, rz, s]) => Math.hypot(rx - x, rz - z) > s + 1) && PALMS.every(([px, pz]) => Math.hypot(px - x, pz - z) > 1.2);
@@ -61,7 +65,7 @@ const BEACH: Pose[] = (() => {
       spots.push({ pos: new Vector3(x, beachHeight(x, z), z), yaw: Math.atan2(-slope, 1), stance: "stand", reach: 5.2 });
     }
   }
-  return spots.slice(0, 20);
+  return spots.slice(0, BEACH_SPOTS);
 })();
 
 /** Where people fish when they aren't on the podium: dock first (after the host's seat), then the beach. */
@@ -81,6 +85,8 @@ const ROD_LEN = 2.7;
 /** Short butt so it stays hidden behind the sprite when seen from behind. */
 const ROD_BUTT = 0.06;
 const LINE_POINTS = 14;
+/** Per-frame time for baking sprite frames; the rest waits for later frames. */
+const BAKE_BUDGET_MS = 4;
 /** Name tags further than this from the camera are hidden to keep the overview readable. */
 const TAG_MAX_DIST = 30;
 
@@ -139,10 +145,9 @@ interface Fisher {
   rodRoot: TransformNode;
   rodRest: Quaternion;
   tip: TransformNode;
-  bobber: Mesh;
+  bobber: InstancedMesh;
   /** Sideways offset of the bobber, so neighbours' lines don't overlap. */
   bobberSide: number;
-  line: LinesMesh;
   linePoints: Vector3[];
   lastActive: number;
   appear: number;
@@ -170,10 +175,10 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
   let podium: string[] = [];
   let now = 0;
 
-  const blobMat = new StandardMaterial("blobMat", scene);
-  blobMat.diffuseColor = Color3.Black();
-  blobMat.specularColor = Color3.Black();
-  blobMat.alpha = 0.32;
+  // Every fisher's props are instances of these, so 40 fishers cost a handful of draw calls.
+  const props = createPropTemplates(scene);
+  // All fishing lines live in one line system, rebuilt in place each frame.
+  let lines: LinesMesh | null = null;
 
   const poseOf = (ref: SpotRef): Pose => {
     if (ref.kind === "boat") {
@@ -200,12 +205,9 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
 
     // Soft blob shadow under the sprite (a billboard's own shadow would swing with the camera).
     if (spot.kind !== "boat") {
-      const blob = CreateDisc("fisherShadow", { radius: 0.36, tessellation: 16 }, scene);
+      const blob = props.blob.createInstance("fisherShadow");
       blob.parent = root;
-      blob.rotation.x = Math.PI / 2;
       blob.position = new Vector3(0, 0.02, pose.stance === "sit" ? -0.08 : 0);
-      blob.scaling.y = 0.75;
-      blob.material = blobMat;
     }
 
     // 3D bamboo rod from the sprite's hands, so it reads correctly from every side.
@@ -215,21 +217,9 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
     const aim = new Vector3(0.18 + (hash01(h) - 0.5) * 0.3, pose.stance === "stand" ? 0.8 : 0.95, 1).normalize();
     const rodRest = Quaternion.FromUnitVectorsToRef(Vector3.Up(), aim, new Quaternion());
     rodRoot.rotationQuaternion = rodRest.clone();
-    const rod = CreateCylinder("rod", { height: ROD_LEN, diameterTop: 0.022, diameterBottom: 0.05, tessellation: 6 }, scene);
+    const rod = props.rod.createInstance("rod");
     rod.parent = rodRoot;
-    rod.position.y = ROD_LEN / 2 - ROD_BUTT;
-    rod.material = lowPolyMat(scene, "#D8B866");
     shadows.addShadowCaster(rod);
-    const grip = CreateCylinder("rodGrip", { height: 0.26, diameter: 0.065, tessellation: 6 }, scene);
-    grip.parent = rodRoot;
-    grip.position.y = 0.08;
-    grip.material = lowPolyMat(scene, "#5A3B24");
-    for (let i = 1; i <= 4; i++) {
-      const knot = CreateCylinder(`rodNode${i}`, { height: 0.035, diameter: 0.06 - i * 0.007, tessellation: 6 }, scene);
-      knot.parent = rodRoot;
-      knot.position.y = (ROD_LEN - ROD_BUTT) * (i / 5);
-      knot.material = lowPolyMat(scene, "#A88A44");
-    }
     const tip = new TransformNode("rodTip", scene);
     tip.parent = rodRoot;
     tip.position.y = ROD_LEN - ROD_BUTT;
@@ -241,28 +231,14 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
         const w = pose.pos.add(rotateY([local.x, 0, local.z], pose.yaw));
         local.y = beachHeight(w.x, w.z) - pose.pos.y + 0.14; // sit on the sloping sand
       }
-      const bucket = CreateCylinder("bucket", { diameterTop: 0.34, diameterBottom: 0.26, height: 0.32, tessellation: 10 }, scene);
+      const bucket = props.buckets[h % props.buckets.length]!.createInstance("bucket");
       bucket.parent = root;
       bucket.position = local;
-      bucket.material = lowPolyMat(scene, ["#3E7CB1", "#D2453B", "#5AAE61", "#F2C94C"][h % 4]!);
       shadows.addShadowCaster(bucket);
-      const water = CreateCylinder("bucketWater", { diameter: 0.3, height: 0.02, tessellation: 10 }, scene);
-      water.parent = root;
-      water.position = local.add(new Vector3(0, 0.14, 0));
-      water.material = lowPolyMat(scene, "#2C6E8F");
     }
 
-    const bobber = CreateSphere("bobber", { diameter: 0.2, segments: 6 }, scene);
-    bobber.material = lowPolyMat(scene, "#FF4A3A", { emissive: 0.35 });
-    const cap = CreateSphere("bobberCap", { diameter: 0.14, segments: 6 }, scene);
-    cap.parent = bobber;
-    cap.position.y = -0.06;
-    cap.material = lowPolyMat(scene, "#FFFFFF");
-
+    const bobber = props.bobber.createInstance("bobber");
     const linePoints = Array.from({ length: LINE_POINTS }, () => Vector3.Zero());
-    const line = CreateLines("line", { points: linePoints, updatable: true }, scene);
-    line.color = new Color3(0.95, 0.95, 0.9);
-    line.alpha = 0.85;
 
     const fisher: Fisher = {
       member,
@@ -275,7 +251,6 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
       tip,
       bobber,
       bobberSide: (hash01(h + 1) - 0.5) * 1.4,
-      line,
       linePoints,
       lastActive,
       appear: 0,
@@ -292,7 +267,6 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
     f.sprite.dispose();
     f.root.dispose(); // materials are shared between fishers; keep them
     f.bobber.dispose();
-    f.line.dispose();
     fishers.delete(f.member.userId);
   };
 
@@ -379,6 +353,8 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
     update(camera, timeSec, dt) {
       now = timeSec;
       boat.update(timeSec);
+      pumpSpriteBakes(scene, BAKE_BUDGET_MS);
+      const visibleLines: Vector3[][] = [];
       for (const f of [...fishers.values()]) {
         const onPodium = podium.includes(f.member.userId);
         if (!f.isHost && !onPodium && !f.leaving && now - f.lastActive > IDLE_LEAVE_SEC) f.leaving = true;
@@ -398,10 +374,9 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
 
         // Pop in/out with a little overshoot.
         const s = f.appear >= 1 ? 1 : easeOutBack(Math.max(0, f.appear));
-        f.sprite.plane.scaling.setAll(s);
+        f.sprite.setScale(s);
         f.root.scaling.setAll(Math.max(s, 0.001));
         f.bobber.setEnabled(f.appear > 0.5);
-        f.line.setEnabled(f.appear > 0.5);
         f.sprite.update(camera, timeSec);
 
         const sway = Math.sin(timeSec * 1.3 + f.phase * 6) * 0.025 + Math.sin(f.jerk * Math.PI) * 0.35;
@@ -420,8 +395,9 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
           Vector3.LerpToRef(from, f.bobber.position, t, f.linePoints[i]!);
           f.linePoints[i]!.y -= Math.sin(t * Math.PI) * (0.45 - f.jerk * 0.35);
         }
-        CreateLines("line", { points: f.linePoints, instance: f.line });
+        if (f.appear > 0.5) visibleLines.push(f.linePoints);
       }
+      lines = updateLines(lines, visibleLines);
       updateCrown(timeSec, dt);
     },
 
@@ -469,6 +445,82 @@ export function createCrew(scene: Scene, engine: Engine, shadows: ShadowGenerato
       });
     },
   };
+}
+
+/** Rebuild the shared line system in place, or recreate it when the number of lines changes. */
+function updateLines(current: LinesMesh | null, paths: Vector3[][]): LinesMesh | null {
+  if (current && current.metadata?.count === paths.length) {
+    CreateLineSystem("lines", { lines: paths, instance: current });
+    return current;
+  }
+  current?.dispose();
+  if (paths.length === 0) return null;
+  const created = CreateLineSystem("lines", { lines: paths, updatable: true });
+  created.color = new Color3(0.95, 0.95, 0.9);
+  created.alpha = 0.85;
+  created.metadata = { count: paths.length };
+  return created;
+}
+
+interface PropTemplates {
+  rod: Mesh;
+  buckets: Mesh[];
+  bobber: Mesh;
+  blob: Mesh;
+}
+
+/** Hidden source meshes for per-fisher props; fishers get instances (one draw call per material). */
+function createPropTemplates(scene: Scene): PropTemplates {
+  const merge = (name: string, parts: Mesh[]): Mesh => {
+    const mesh = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
+    mesh.name = name;
+    mesh.isVisible = false; // instances still render
+    return mesh;
+  };
+
+  const rodParts: Mesh[] = [];
+  const rod = CreateCylinder("rod", { height: ROD_LEN, diameterTop: 0.022, diameterBottom: 0.05, tessellation: 6 }, scene);
+  rod.position.y = ROD_LEN / 2 - ROD_BUTT;
+  rod.material = lowPolyMat(scene, "#D8B866");
+  rodParts.push(rod);
+  const grip = CreateCylinder("rodGrip", { height: 0.26, diameter: 0.065, tessellation: 6 }, scene);
+  grip.position.y = 0.08;
+  grip.material = lowPolyMat(scene, "#5A3B24");
+  rodParts.push(grip);
+  for (let i = 1; i <= 4; i++) {
+    const knot = CreateCylinder(`rodNode${i}`, { height: 0.035, diameter: 0.06 - i * 0.007, tessellation: 6 }, scene);
+    knot.position.y = (ROD_LEN - ROD_BUTT) * (i / 5);
+    knot.material = lowPolyMat(scene, "#A88A44");
+    rodParts.push(knot);
+  }
+
+  const buckets = ["#3E7CB1", "#D2453B", "#5AAE61", "#F2C94C"].map((color, i) => {
+    const bucket = CreateCylinder("bucket", { diameterTop: 0.34, diameterBottom: 0.26, height: 0.32, tessellation: 10 }, scene);
+    bucket.material = lowPolyMat(scene, color);
+    const water = CreateCylinder("bucketWater", { diameter: 0.3, height: 0.02, tessellation: 10 }, scene);
+    water.position.y = 0.14;
+    water.material = lowPolyMat(scene, "#2C6E8F");
+    return merge(`bucket${i}`, [bucket, water]);
+  });
+
+  const float = CreateSphere("bobber", { diameter: 0.2, segments: 6 }, scene);
+  float.material = lowPolyMat(scene, "#FF4A3A", { emissive: 0.35 });
+  const cap = CreateSphere("bobberCap", { diameter: 0.14, segments: 6 }, scene);
+  cap.position.y = -0.06;
+  cap.material = lowPolyMat(scene, "#FFFFFF");
+
+  const blob = CreateDisc("fisherShadow", { radius: 0.36, tessellation: 16 }, scene);
+  blob.rotation.x = Math.PI / 2;
+  blob.scaling.y = 0.75;
+  blob.bakeCurrentTransformIntoVertices();
+  const blobMat = new StandardMaterial("blobMat", scene);
+  blobMat.diffuseColor = Color3.Black();
+  blobMat.specularColor = Color3.Black();
+  blobMat.alpha = 0.32;
+  blob.material = blobMat;
+  blob.isVisible = false;
+
+  return { rod: merge("rodTemplate", rodParts), buckets, bobber: merge("bobberTemplate", [float, cap]), blob };
 }
 
 function easeOutBack(t: number): number {

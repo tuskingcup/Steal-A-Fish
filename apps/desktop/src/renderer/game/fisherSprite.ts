@@ -15,9 +15,11 @@ import { avatarKey, type Avatar } from "@saf/core";
  *
  * Instead of hand-drawing each view, a character is described as a small set of signed-distance
  * shapes built from its Avatar (local space: +z faces the water, origin = seat on the dock edge)
- * and baked into a 48×56 toon-shaded, outlined pixel frame per view direction. Frames are baked
- * lazily the first time a direction is seen and cached per look, so viewers who share a look
- * share textures. The billboard shows the frame matching the camera's angle around the fisher.
+ * and baked into a 48×56 toon-shaded, outlined pixel frame per view direction. Baking is CPU work
+ * (a few ms per frame), so it runs from a time-budgeted queue (`pumpSpriteBakes`): the direction
+ * the camera needs right now goes first, the rest warm up in the background, and until a frame
+ * is ready the billboard shows the nearest finished direction. Frames are cached per look, so
+ * viewers who share a look share textures.
  */
 
 const FRAME_W = 48;
@@ -25,6 +27,11 @@ const FRAME_H = 56;
 /** World metres per sprite pixel. */
 export const SPRITE_PX = 0.035;
 const DIRECTIONS = 16;
+/**
+ * Characters are (near enough) left/right symmetric, so directions past half way are drawn as
+ * mirror images of directions 0…8: only 9 of the 16 need baking.
+ */
+const BAKED_DIRS = DIRECTIONS / 2 + 1;
 const POSES = 2;
 /** Bake with a slight downward look so hat brims read; the billboard itself stays vertical. */
 const BAKE_PITCH = 0.17;
@@ -52,11 +59,18 @@ export interface StanceGeometry {
   crown: V3;
 }
 
+/** Fisher-local box that holds every shape of a stance (any avatar); rays outside it are skipped. */
+const STANCE_BOUNDS: Record<Stance, { min: V3; max: V3 }> = {
+  sit: { min: [-0.45, -0.48, -0.42], max: [0.45, 1.12, 0.66] },
+  stand: { min: [-0.45, -0.02, -0.42], max: [0.45, 1.9, 0.66] },
+};
+
 export const STANCES: Record<Stance, StanceGeometry> = {
-  sit: { planeCenter: [0, 0.25, 0.25], hand: [0.05, 0.36, 0.3], headTop: [0, 1.18, 0.05], crown: [0, 1.32, 0.05] },
+  // Hands on the centre line keep the character left/right symmetric, so mirrored frames line up with the rod.
+  sit: { planeCenter: [0, 0.25, 0.25], hand: [0, 0.36, 0.3], headTop: [0, 1.18, 0.05], crown: [0, 1.32, 0.05] },
   stand: {
     planeCenter: [0, 0.95, 0.25],
-    hand: [0.05, 0.36 + STAND_LIFT, 0.3],
+    hand: [0, 0.36 + STAND_LIFT, 0.3],
     headTop: [0, 1.18 + STAND_LIFT, 0.05],
     crown: [0, 1.32 + STAND_LIFT, 0.05],
   },
@@ -65,8 +79,18 @@ export const STANCES: Record<Stance, StanceGeometry> = {
 const OUTLINE = hexRgb("#1E1424");
 const STRAW = "#E8C273";
 
+type SdfFn = (x: number, y: number, z: number) => number;
+/** Bounding sphere: centre x, y, z and radius. */
+type Bound = [number, number, number, number];
+
+interface Shape {
+  sdf: SdfFn;
+  bound: Bound;
+}
+
 interface Prim {
-  sdf: (x: number, y: number, z: number) => number;
+  sdf: SdfFn;
+  bound: Bound;
   color: (x: number, y: number, z: number) => Rgb;
   /** Prims in the same group don't draw inner outlines against each other. */
   group: number;
@@ -74,13 +98,70 @@ interface Prim {
 
 export interface FisherSprite {
   plane: Mesh;
+  /** Uniform scale for pop-in/out (the sprite handles its own mirroring). */
+  setScale(s: number): void;
   /** Move with the spot (boats rock). */
   setBase(pos: Vector3): void;
   update(camera: Camera, timeSec: number): void;
   dispose(): void;
 }
 
+// ---------- Bake queue ----------
+
+interface BakeTask {
+  id: string;
+  run(): void;
+  /** False once nobody with this look is on screen; queued background work is then dropped. */
+  wanted(): boolean;
+}
+
+interface BakeQueue {
+  urgent: BakeTask[];
+  background: BakeTask[];
+  queued: Set<string>;
+}
+
 const frameCache = new WeakMap<Scene, Map<string, (DynamicTexture | undefined)[]>>();
+const bakeQueues = new WeakMap<Scene, BakeQueue>();
+/** How many live sprites use each look, per scene. */
+const lookUsers = new WeakMap<Scene, Map<string, number>>();
+
+function queueFor(scene: Scene): BakeQueue {
+  let q = bakeQueues.get(scene);
+  if (!q) bakeQueues.set(scene, (q = { urgent: [], background: [], queued: new Set() }));
+  return q;
+}
+
+function enqueue(scene: Scene, task: BakeTask, urgent: boolean): void {
+  const q = queueFor(scene);
+  if (q.queued.has(task.id)) {
+    if (!urgent) return;
+    // Promote: drop the background copy so it isn't baked twice.
+    const i = q.background.findIndex((t) => t.id === task.id);
+    if (i < 0) return;
+    q.background.splice(i, 1);
+  }
+  q.queued.add(task.id);
+  (urgent ? q.urgent : q.background).push(task);
+}
+
+/**
+ * Bake queued sprite frames for up to `budgetMs` this frame (always at least one urgent frame,
+ * so new fishers appear). Call once per rendered frame.
+ */
+export function pumpSpriteBakes(scene: Scene, budgetMs: number): void {
+  const q = queueFor(scene);
+  const start = performance.now();
+  let first = true;
+  while (q.urgent.length > 0 || q.background.length > 0) {
+    if (!first && performance.now() - start > budgetMs) return;
+    const task = (q.urgent.length > 0 ? q.urgent : q.background).shift()!;
+    q.queued.delete(task.id);
+    if (!task.wanted()) continue;
+    task.run();
+    first = false;
+  }
+}
 
 /**
  * @param seat  world position of the seat (dock edge)
@@ -93,12 +174,41 @@ export function createFisherSprite(scene: Scene, avatar: Avatar, stance: Stance,
   const key = `${stance}|${avatarKey(avatar)}`;
   let frames = perScene.get(key);
   if (!frames) perScene.set(key, (frames = new Array<DynamicTexture | undefined>(POSES * DIRECTIONS)));
-  const poses = Array.from({ length: POSES }, (_, p) => buildPrims(avatar, p, stance));
   const cached = frames;
+  let users = lookUsers.get(scene);
+  if (!users) lookUsers.set(scene, (users = new Map()));
+  const lookCount = users;
+  lookCount.set(key, (lookCount.get(key) ?? 0) + 1);
 
-  const frame = (pose: number, dir: number): DynamicTexture => {
+  let poses: Prim[][] | null = null;
+  const task = (i: number): BakeTask => ({
+    id: `${key}#${i}`,
+    wanted: () => cached[i] === undefined && (lookCount.get(key) ?? 0) > 0,
+    run: () => {
+      poses ??= Array.from({ length: POSES }, (_, p) => buildPrims(avatar, p, stance));
+      const dir = i % DIRECTIONS;
+      cached[i] = bakeFrame(scene, poses[Math.floor(i / DIRECTIONS)]!, geo.planeCenter, STANCE_BOUNDS[stance], (dir / DIRECTIONS) * Math.PI * 2, `fisher_${key}_${i}`);
+    },
+  });
+  // Warm every direction in the background; whatever the camera needs is promoted when asked for.
+  for (let pose = 0; pose < POSES; pose++)
+    for (let dir = 0; dir < BAKED_DIRS; dir++) if (!cached[pose * DIRECTIONS + dir]) enqueue(scene, task(pose * DIRECTIONS + dir), false);
+
+  /** The wanted (baked) direction if ready, else the nearest ready one, same pose first. */
+  const frame = (pose: number, dir: number): DynamicTexture | undefined => {
     const i = pose * DIRECTIONS + dir;
-    return (cached[i] ??= bakeFrame(scene, poses[pose]!, geo.planeCenter, (dir / DIRECTIONS) * Math.PI * 2, `fisher_${key}_${i}`));
+    if (cached[i]) return cached[i];
+    enqueue(scene, task(i), true);
+    for (let off = 1; off < BAKED_DIRS; off++) {
+      for (const p of [pose, 1 - pose]) {
+        for (const near of [dir - off, dir + off]) {
+          if (near < 0 || near >= BAKED_DIRS) continue;
+          const tex = cached[p * DIRECTIONS + near];
+          if (tex) return tex;
+        }
+      }
+    }
+    return cached[(1 - pose) * DIRECTIONS + dir];
   };
 
   const plane = CreatePlane("fisher", { width: FRAME_W * SPRITE_PX, height: FRAME_H * SPRITE_PX }, scene);
@@ -120,8 +230,14 @@ export function createFisherSprite(scene: Scene, avatar: Avatar, stance: Stance,
   plane.material = mat;
 
   let current: DynamicTexture | null = null;
+  let mirror = false;
+  let scale = 1;
+  plane.isVisible = false;
   return {
     plane,
+    setScale(s) {
+      scale = s;
+    },
     setBase(pos) {
       pos.addToRef(offset, plane.position);
     },
@@ -131,8 +247,12 @@ export function createFisherSprite(scene: Scene, avatar: Avatar, stance: Stance,
       const angle = Math.atan2(v.x, v.z) - yaw;
       const dir = (((Math.round(angle / step)) % DIRECTIONS) + DIRECTIONS) % DIRECTIONS;
       const pose = Math.floor(timeSec * 1.6 + phase) % POSES;
-      const tex = frame(pose, dir);
-      if (tex !== current) {
+      mirror = dir >= BAKED_DIRS;
+      const tex = frame(pose, mirror ? DIRECTIONS - dir : dir);
+      // A negative x scale flips the billboard (back faces are drawn, and the sprite is unlit).
+      plane.scaling.set(mirror ? -scale : scale, scale, scale);
+      plane.isVisible = tex !== undefined; // first frame still baking
+      if (tex && tex !== current) {
         current = tex;
         mat.diffuseTexture = tex;
         mat.emissiveTexture = tex;
@@ -140,6 +260,7 @@ export function createFisherSprite(scene: Scene, avatar: Avatar, stance: Stance,
     },
     dispose() {
       // Textures stay cached for the next viewer with this look.
+      lookCount.set(key, (lookCount.get(key) ?? 1) - 1);
       mat.dispose();
       plane.dispose();
     },
@@ -161,8 +282,8 @@ function buildPrims(a: Avatar, pose: number, stance: Stance): Prim[] {
   // Upper body is modelled seated; standing lifts it onto straight legs (with a breathing bob).
   const lift = standing ? STAND_LIFT - (pose === 1 ? 0.012 : 0) : 0;
   const hand = STANCES.sit.hand; // upper body is modelled seated, then lifted
-  const add = (sdf: Prim["sdf"], color: string | Prim["color"], group: number) =>
-    prims.push({ sdf, color: typeof color === "string" ? solid(color) : color, group });
+  const add = (shape: Shape, color: string | Prim["color"], group: number) =>
+    prims.push({ sdf: shape.sdf, bound: shape.bound, color: typeof color === "string" ? solid(color) : color, group });
 
   const skin = a.skin;
   const cloth = topPattern(a);
@@ -279,8 +400,13 @@ function buildPrims(a: Avatar, pose: number, stance: Stance): Prim[] {
   }
   if (lift !== 0) {
     for (let i = upperStart; i < prims.length; i++) {
-      const { sdf, color } = prims[i]!;
-      prims[i] = { ...prims[i]!, sdf: (x, y, z) => sdf(x, y - lift, z), color: (x, y, z) => color(x, y - lift, z) };
+      const { sdf, color, bound } = prims[i]!;
+      prims[i] = {
+        ...prims[i]!,
+        sdf: (x, y, z) => sdf(x, y - lift, z),
+        color: (x, y, z) => color(x, y - lift, z),
+        bound: [bound[0], bound[1] + lift, bound[2], bound[3]],
+      };
     }
   }
   return prims;
@@ -328,7 +454,7 @@ function cellHash(x: number, y: number, z: number, size: number): number {
 
 // ---------- Baker ----------
 
-function bakeFrame(scene: Scene, prims: Prim[], center: V3, azimuth: number, name: string): DynamicTexture {
+function bakeFrame(scene: Scene, prims: Prim[], center: V3, bounds: { min: V3; max: V3 }, azimuth: number, name: string): DynamicTexture {
   // Camera sits at `azimuth` around the fisher (0 = in front, seeing the face), looking slightly down.
   const cp = Math.cos(BAKE_PITCH);
   const toCam = [Math.sin(azimuth) * cp, Math.sin(BAKE_PITCH), Math.cos(azimuth) * cp];
@@ -343,17 +469,22 @@ function bakeFrame(scene: Scene, prims: Prim[], center: V3, azimuth: number, nam
   const prim = new Int16Array(W * H).fill(-1);
   const rgb = new Float32Array(W * H * 3);
 
-  const sceneSdf = (x: number, y: number, z: number): [number, number] => {
+  // Only shapes whose bounding sphere the current ray passes through are evaluated.
+  const active = new Int16Array(prims.length);
+  let activeCount = 0;
+  // Distance to the nearest active shape; its index is left in `hitIdx` (no allocation per call).
+  let hitIdx = -1;
+  const sceneSdf = (x: number, y: number, z: number): number => {
     let best = Infinity;
-    let idx = -1;
-    for (let i = 0; i < prims.length; i++) {
+    for (let a = 0; a < activeCount; a++) {
+      const i = active[a]!;
       const v = prims[i]!.sdf(x, y, z);
       if (v < best) {
         best = v;
-        idx = i;
+        hitIdx = i;
       }
     }
-    return [best, idx];
+    return best;
   };
 
   const light = normalize([0.45, 0.85, 0.55]); // towards the sun, fisher-local
@@ -366,21 +497,51 @@ function bakeFrame(scene: Scene, prims: Prim[], center: V3, azimuth: number, nam
       const oy = center[1] + r[1]! * sx + u[1]! * sy - d[1]! * 2;
       const oz = center[2] + r[2]! * sx + u[2]! * sy - d[2]! * 2;
 
-      let t = 0.8; // the character fits well within 1.2 m of the plane
-      for (let step = 0; step < 64 && t < 3.2; step++) {
+      // Clip the ray to the stance's bounding box: most pixels miss it entirely.
+      let tNear = 0;
+      let tFar = 4;
+      const o = [ox, oy, oz];
+      for (let a = 0; a < 3 && tNear <= tFar; a++) {
+        const da = d[a]!;
+        if (Math.abs(da) < 1e-6) {
+          if (o[a]! < bounds.min[a]! || o[a]! > bounds.max[a]!) tFar = -1;
+          continue;
+        }
+        let t0 = (bounds.min[a]! - o[a]!) / da;
+        let t1 = (bounds.max[a]! - o[a]!) / da;
+        if (t0 > t1) [t0, t1] = [t1, t0];
+        tNear = Math.max(tNear, t0);
+        tFar = Math.min(tFar, t1);
+      }
+      if (tNear > tFar) continue;
+
+      activeCount = 0;
+      for (let i = 0; i < prims.length; i++) {
+        const [cx, cy, cz, cr] = prims[i]!.bound;
+        const wx = cx - ox, wy = cy - oy, wz = cz - oz;
+        const along = wx * d[0]! + wy * d[1]! + wz * d[2]!;
+        const ex = wx - along * d[0]!, ey = wy - along * d[1]!, ez = wz - along * d[2]!;
+        const reach = cr + 0.01;
+        if (ex * ex + ey * ey + ez * ez <= reach * reach) active[activeCount++] = i;
+      }
+      if (activeCount === 0) continue;
+
+      let t = tNear;
+      for (let step = 0; step < 64 && t <= tFar; step++) {
         const px = ox + d[0]! * t;
         const py = oy + d[1]! * t;
         const pz = oz + d[2]! * t;
-        const [dist, idx] = sceneSdf(px, py, pz);
+        const dist = sceneSdf(px, py, pz);
+        const idx = hitIdx;
         if (dist < 0.0015) {
           const k = j * W + i;
           depth[k] = t;
           prim[k] = idx;
           const e = 0.004;
           const n = normalize([
-            sceneSdf(px + e, py, pz)[0] - sceneSdf(px - e, py, pz)[0],
-            sceneSdf(px, py + e, pz)[0] - sceneSdf(px, py - e, pz)[0],
-            sceneSdf(px, py, pz + e)[0] - sceneSdf(px, py, pz - e)[0],
+            sceneSdf(px + e, py, pz) - sceneSdf(px - e, py, pz),
+            sceneSdf(px, py + e, pz) - sceneSdf(px, py - e, pz),
+            sceneSdf(px, py, pz + e) - sceneSdf(px, py, pz - e),
           ]);
           const ndl = n[0]! * light[0]! + n[1]! * light[1]! + n[2]! * light[2]!;
           // Three-step toon ramp with cool shadows, the usual pixel-art shading.
@@ -435,58 +596,74 @@ function bakeFrame(scene: Scene, prims: Prim[], center: V3, azimuth: number, nam
 
 // ---------- SDF helpers (Inigo Quilez) ----------
 
-function sphere(c: V3, rad: number): Prim["sdf"] {
-  return (x, y, z) => Math.hypot(x - c[0], y - c[1], z - c[2]) - rad;
+const mid = (a: V3, b: V3): [number, number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+const halfLen = (a: V3, b: V3) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 2;
+
+function sphere(c: V3, rad: number): Shape {
+  return { sdf: (x, y, z) => Math.hypot(x - c[0], y - c[1], z - c[2]) - rad, bound: [c[0], c[1], c[2], rad] };
 }
 
-function capsule(a: V3, b: V3, rad: number): Prim["sdf"] {
+function capsule(a: V3, b: V3, rad: number): Shape {
   const bax = b[0] - a[0], bay = b[1] - a[1], baz = b[2] - a[2];
   const baba = bax * bax + bay * bay + baz * baz;
-  return (x, y, z) => {
-    const pax = x - a[0], pay = y - a[1], paz = z - a[2];
-    const h = Math.min(1, Math.max(0, (pax * bax + pay * bay + paz * baz) / baba));
-    return Math.hypot(pax - bax * h, pay - bay * h, paz - baz * h) - rad;
+  return {
+    sdf: (x, y, z) => {
+      const pax = x - a[0], pay = y - a[1], paz = z - a[2];
+      const h = Math.min(1, Math.max(0, (pax * bax + pay * bay + paz * baz) / baba));
+      return Math.hypot(pax - bax * h, pay - bay * h, paz - baz * h) - rad;
+    },
+    bound: [...mid(a, b), halfLen(a, b) + rad],
   };
 }
 
-function roundBox(c: V3, half: V3, rad: number): Prim["sdf"] {
-  return (x, y, z) => {
-    const qx = Math.abs(x - c[0]) - half[0] + rad;
-    const qy = Math.abs(y - c[1]) - half[1] + rad;
-    const qz = Math.abs(z - c[2]) - half[2] + rad;
-    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - rad;
+function roundBox(c: V3, half: V3, rad: number): Shape {
+  return {
+    sdf: (x, y, z) => {
+      const qx = Math.abs(x - c[0]) - half[0] + rad;
+      const qy = Math.abs(y - c[1]) - half[1] + rad;
+      const qz = Math.abs(z - c[2]) - half[2] + rad;
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - rad;
+    },
+    bound: [c[0], c[1], c[2], Math.hypot(half[0], half[1], half[2])],
   };
 }
 
 /** Ring facing +z (glasses rims). */
-function ringZ(c: V3, rad: number, thickness: number): Prim["sdf"] {
-  return (x, y, z) => {
-    const q = Math.hypot(x - c[0], y - c[1]) - rad;
-    return Math.hypot(q, z - c[2]) - thickness;
+function ringZ(c: V3, rad: number, thickness: number): Shape {
+  return {
+    sdf: (x, y, z) => {
+      const q = Math.hypot(x - c[0], y - c[1]) - rad;
+      return Math.hypot(q, z - c[2]) - thickness;
+    },
+    bound: [c[0], c[1], c[2], rad + thickness],
   };
 }
 
-function intersect(a: Prim["sdf"], b: Prim["sdf"]): Prim["sdf"] {
-  return (x, y, z) => Math.max(a(x, y, z), b(x, y, z));
+/** `a` cut by another distance function (bounded by `a`). */
+function intersect(a: Shape, b: SdfFn): Shape {
+  return { sdf: (x, y, z) => Math.max(a.sdf(x, y, z), b(x, y, z)), bound: a.bound };
 }
 
-function cappedCone(a: V3, b: V3, ra: number, rb: number): Prim["sdf"] {
+function cappedCone(a: V3, b: V3, ra: number, rb: number): Shape {
   const rba = rb - ra;
   const bax = b[0] - a[0], bay = b[1] - a[1], baz = b[2] - a[2];
   const baba = bax * bax + bay * bay + baz * baz;
-  return (x, y, z) => {
-    const pax = x - a[0], pay = y - a[1], paz = z - a[2];
-    const papa = pax * pax + pay * pay + paz * paz;
-    const paba = (pax * bax + pay * bay + paz * baz) / baba;
-    const px = Math.sqrt(Math.max(0, papa - paba * paba * baba));
-    const cax = Math.max(0, px - (paba < 0.5 ? ra : rb));
-    const cay = Math.abs(paba - 0.5) - 0.5;
-    const k = rba * rba + baba;
-    const f = Math.min(1, Math.max(0, (rba * (px - ra) + paba * baba) / k));
-    const cbx = px - ra - f * rba;
-    const cby = paba - f;
-    const s = cbx < 0 && cay < 0 ? -1 : 1;
-    return s * Math.sqrt(Math.min(cax * cax + cay * cay * baba, cbx * cbx + cby * cby * baba));
+  return {
+    sdf: (x, y, z) => {
+      const pax = x - a[0], pay = y - a[1], paz = z - a[2];
+      const papa = pax * pax + pay * pay + paz * paz;
+      const paba = (pax * bax + pay * bay + paz * baz) / baba;
+      const px = Math.sqrt(Math.max(0, papa - paba * paba * baba));
+      const cax = Math.max(0, px - (paba < 0.5 ? ra : rb));
+      const cay = Math.abs(paba - 0.5) - 0.5;
+      const k = rba * rba + baba;
+      const f = Math.min(1, Math.max(0, (rba * (px - ra) + paba * baba) / k));
+      const cbx = px - ra - f * rba;
+      const cby = paba - f;
+      const sgn = cbx < 0 && cay < 0 ? -1 : 1;
+      return sgn * Math.sqrt(Math.min(cax * cax + cay * cay * baba, cbx * cbx + cby * cby * baba));
+    },
+    bound: [...mid(a, b), Math.hypot(halfLen(a, b), Math.max(ra, rb))],
   };
 }
 
