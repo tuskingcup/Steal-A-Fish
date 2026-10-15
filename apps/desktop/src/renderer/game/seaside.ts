@@ -255,6 +255,42 @@ export function createSea(scene: Scene): Sea {
 
 // ---------- Beach, hills, palms, rocks ----------
 
+/** Palm trees on the beach: x, z, seed. */
+export const PALMS: readonly (readonly [number, number, number])[] = [
+  [-5.5, -12, 0],
+  [-9, -9.5, 1],
+  [6.5, -11, 2],
+  [10.5, -15, 3],
+  [-14, -17, 4],
+  [3, -20, 5],
+  [16, -10.5, 6],
+  [-20, -12, 7],
+  [22, -18, 8],
+];
+
+/** Rocks along the shore: x, z, size. */
+export const ROCKS: readonly (readonly [number, number, number])[] = [
+  [-3.2, -6.5, 0.9],
+  [3.4, -5.8, 0.7],
+  [-2.4, 2.2, 0.6],
+  [2.8, 5.5, 0.8],
+  [-4.5, 6.8, 0.5],
+  [9, -6.5, 1.2],
+  [-11, -5.5, 1],
+];
+
+/** z where the sand meets the water at x (the beach slopes down towards +z). */
+export function shorelineZ(x: number, height = 0.12): number {
+  let lo = -20;
+  let hi = 0;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (beachHeight(x, mid) > height) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 export function createBeach(scene: Scene, shadows: ShadowGenerator): void {
   const beach = CreateGround("beach", { width: 200, height: 90, subdivisions: 80, updatable: true }, scene);
   beach.position.z = -45 + 1;
@@ -303,30 +339,10 @@ export function createBeach(scene: Scene, shadows: ShadowGenerator): void {
     m.material = island;
   });
 
-  const palms: [number, number, number][] = [
-    [-5.5, -12, 0],
-    [-9, -9.5, 1],
-    [6.5, -11, 2],
-    [10.5, -15, 3],
-    [-14, -17, 4],
-    [3, -20, 5],
-    [16, -10.5, 6],
-    [-20, -12, 7],
-    [22, -18, 8],
-  ];
-  for (const [x, z, seed] of palms) palm(scene, shadows, x, z, seed);
+  for (const [x, z, seed] of PALMS) palm(scene, shadows, x, z, seed);
 
   const rockMat = texturedMat(scene, "rockMat", speckleTexture(scene, "rock", 8, ["#9A9C97", "#83857F", "#B0B2AA"], [0.5, 0.3, 0.2], 2, 2));
-  const rocks: [number, number, number][] = [
-    [-3.2, -6.5, 0.9],
-    [3.4, -5.8, 0.7],
-    [-2.4, 2.2, 0.6],
-    [2.8, 5.5, 0.8],
-    [-4.5, 6.8, 0.5],
-    [9, -6.5, 1.2],
-    [-11, -5.5, 1],
-  ];
-  rocks.forEach(([x, z, s], i) => {
+  ROCKS.forEach(([x, z, s], i) => {
     const rock = flat(CreateIcoSphere(`rock${i}`, { radius: s, subdivisions: 1 }, scene));
     rock.position = new Vector3(x, Math.max(beachHeight(x, z), -0.6) + s * 0.25, z);
     rock.rotation.y = hash01(i) * 6;

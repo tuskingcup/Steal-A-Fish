@@ -32,16 +32,35 @@ const BAKE_PITCH = 0.17;
 type V3 = readonly [number, number, number];
 type Rgb = [number, number, number];
 
-/**
- * Billboard centre in fisher-local space. It sits just past the dock edge (local z 0.2) so the
- * dangling legs aren't hidden by the dock from the front, and just in front of the hands so the
- * 3D rod is hidden behind the body when seen from behind.
- */
-export const PLANE_CENTER: V3 = [0, 0.25, 0.25];
-/** Where the hands grip the rod, fisher-local. The 3D rod starts here. */
-export const HAND_LOCAL: V3 = [0.05, 0.36, 0.3];
-/** Above the hat, for the name tag. */
-export const HEAD_TOP_LOCAL: V3 = [0, 1.18, 0.05];
+export type Stance = "sit" | "stand";
+
+/** Standing lifts the upper body by the leg length; sitting origin is the seat, standing origin the feet. */
+const STAND_LIFT = 0.78;
+
+export interface StanceGeometry {
+  /**
+   * Billboard centre, fisher-local. For sitting it sits just past the dock edge (local z 0.2) so
+   * dangling legs aren't hidden by the dock from the front; for both stances it is just in front
+   * of the hands so the 3D rod is hidden behind the body when seen from behind.
+   */
+  planeCenter: V3;
+  /** Where the hands grip the rod. The 3D rod starts here. */
+  hand: V3;
+  /** Above the hat, for the name tag. */
+  headTop: V3;
+  /** Where the champion's crown floats. */
+  crown: V3;
+}
+
+export const STANCES: Record<Stance, StanceGeometry> = {
+  sit: { planeCenter: [0, 0.25, 0.25], hand: [0.05, 0.36, 0.3], headTop: [0, 1.18, 0.05], crown: [0, 1.32, 0.05] },
+  stand: {
+    planeCenter: [0, 0.95, 0.25],
+    hand: [0.05, 0.36 + STAND_LIFT, 0.3],
+    headTop: [0, 1.18 + STAND_LIFT, 0.05],
+    crown: [0, 1.32 + STAND_LIFT, 0.05],
+  },
+};
 
 const OUTLINE = hexRgb("#1E1424");
 const STRAW = "#E8C273";
@@ -55,6 +74,8 @@ interface Prim {
 
 export interface FisherSprite {
   plane: Mesh;
+  /** Move with the spot (boats rock). */
+  setBase(pos: Vector3): void;
   update(camera: Camera, timeSec: number): void;
   dispose(): void;
 }
@@ -65,22 +86,24 @@ const frameCache = new WeakMap<Scene, Map<string, (DynamicTexture | undefined)[]
  * @param seat  world position of the seat (dock edge)
  * @param yaw   facing: 0 = +z, π/2 = +x
  */
-export function createFisherSprite(scene: Scene, avatar: Avatar, seat: Vector3, yaw: number, phase = 0): FisherSprite {
+export function createFisherSprite(scene: Scene, avatar: Avatar, stance: Stance, seat: Vector3, yaw: number, phase = 0): FisherSprite {
+  const geo = STANCES[stance];
   let perScene = frameCache.get(scene);
   if (!perScene) frameCache.set(scene, (perScene = new Map()));
-  const key = avatarKey(avatar);
+  const key = `${stance}|${avatarKey(avatar)}`;
   let frames = perScene.get(key);
   if (!frames) perScene.set(key, (frames = new Array<DynamicTexture | undefined>(POSES * DIRECTIONS)));
-  const poses = Array.from({ length: POSES }, (_, p) => buildPrims(avatar, p));
+  const poses = Array.from({ length: POSES }, (_, p) => buildPrims(avatar, p, stance));
   const cached = frames;
 
   const frame = (pose: number, dir: number): DynamicTexture => {
     const i = pose * DIRECTIONS + dir;
-    return (cached[i] ??= bakeFrame(scene, poses[pose]!, (dir / DIRECTIONS) * Math.PI * 2, `fisher_${key}_${i}`));
+    return (cached[i] ??= bakeFrame(scene, poses[pose]!, geo.planeCenter, (dir / DIRECTIONS) * Math.PI * 2, `fisher_${key}_${i}`));
   };
 
   const plane = CreatePlane("fisher", { width: FRAME_W * SPRITE_PX, height: FRAME_H * SPRITE_PX }, scene);
-  plane.position = seat.add(rotateY(PLANE_CENTER, yaw));
+  const offset = rotateY(geo.planeCenter, yaw);
+  plane.position = seat.add(offset);
   plane.billboardMode = Mesh.BILLBOARDMODE_Y;
 
   // Lighting is baked into the pixels, so the sprite is unlit; otherwise its brightness would
@@ -99,6 +122,9 @@ export function createFisherSprite(scene: Scene, avatar: Avatar, seat: Vector3, 
   let current: DynamicTexture | null = null;
   return {
     plane,
+    setBase(pos) {
+      pos.addToRef(offset, plane.position);
+    },
     update(camera, timeSec) {
       const v = camera.globalPosition.subtract(plane.position);
       const step = (Math.PI * 2) / DIRECTIONS;
@@ -129,8 +155,12 @@ export function rotateY(p: V3, yaw: number): Vector3 {
 
 // ---------- Character shapes ----------
 
-function buildPrims(a: Avatar, pose: number): Prim[] {
+function buildPrims(a: Avatar, pose: number, stance: Stance): Prim[] {
   const prims: Prim[] = [];
+  const standing = stance === "stand";
+  // Upper body is modelled seated; standing lifts it onto straight legs (with a breathing bob).
+  const lift = standing ? STAND_LIFT - (pose === 1 ? 0.012 : 0) : 0;
+  const hand = STANCES.sit.hand; // upper body is modelled seated, then lifted
   const add = (sdf: Prim["sdf"], color: string | Prim["color"], group: number) =>
     prims.push({ sdf, color: typeof color === "string" ? solid(color) : color, group });
 
@@ -139,8 +169,25 @@ function buildPrims(a: Avatar, pose: number): Prim[] {
   const sleeve = a.top === "tank" ? skin : a.top === "lifeVest" ? a.topAccent : cloth;
   const forearm = a.top === "longSleeve" ? cloth : skin;
 
-  // Legs dangle over the dock edge and swing out of phase.
-  for (const side of [-1, 1]) {
+  // Seated legs dangle over the edge and swing out of phase; standing legs are straight.
+  if (standing) {
+    for (const side of [-1, 1]) {
+      const hip: V3 = [0.1 * side, 0.86, -0.02];
+      const knee: V3 = [0.1 * side, 0.47, 0.01];
+      const mid: V3 = [0.1 * side, 0.3, 0.0];
+      const ankle: V3 = [0.1 * side, 0.1, -0.01];
+      const baggy = a.bottom === "fishermanPants" ? 0.092 : a.bottom === "shorts" ? 0.088 : 0.08;
+      const shortsEnd: V3 = [0.1 * side, 0.55, 0.01];
+      add(capsule(hip, a.bottom === "shorts" ? shortsEnd : knee, baggy), a.bottomColor, 1);
+      if (a.bottom === "shorts") add(capsule(shortsEnd, knee, 0.06), skin, 2);
+      add(capsule(knee, mid, a.bottom === "shorts" ? 0.058 : baggy - 0.006), a.bottom === "shorts" ? skin : a.bottomColor, a.bottom === "shorts" ? 2 : 1);
+      if (a.shoes === "boots") add(capsule(mid, ankle, 0.072), a.shoeColor, 3);
+      else add(capsule(mid, ankle, 0.058), a.bottom === "longPants" ? a.bottomColor : skin, a.bottom === "longPants" ? 1 : 2);
+      const foot: V3 = [ankle[0], 0.035, 0.05];
+      if (a.shoes === "barefoot") add(roundBox(foot, [0.05, 0.03, 0.09], 0.025), skin, 2);
+      else add(roundBox(foot, [0.058, a.shoes === "boots" ? 0.04 : 0.028, 0.1], 0.02), a.shoeColor, 3);
+    }
+  } else for (const side of [-1, 1]) {
     const swing = (pose === 0 ? 0.08 : -0.08) * side;
     const hip: V3 = [0.1 * side, 0.08, 0];
     const knee: V3 = [0.1 * side, 0.08, 0.36];
@@ -155,6 +202,7 @@ function buildPrims(a: Avatar, pose: number): Prim[] {
     if (a.shoes === "barefoot") add(roundBox(foot, [0.05, 0.03, 0.09], 0.025), skin, 2);
     else add(roundBox(foot, [0.058, a.shoes === "boots" ? 0.04 : 0.028, 0.1], 0.02), a.shoeColor, 3);
   }
+  const upperStart = prims.length;
   add(roundBox([0, 0.1, -0.04], [0.18, 0.1, 0.14], 0.06), a.bottomColor, 1);
 
   // Torso and arms.
@@ -164,9 +212,9 @@ function buildPrims(a: Avatar, pose: number): Prim[] {
     const shoulder: V3 = [0.2 * side, 0.5, -0.02];
     const elbow: V3 = [0.23 * side, 0.34, 0.13];
     add(capsule(shoulder, elbow, 0.058), sleeve, a.top === "tank" ? 10 : 4);
-    add(capsule(elbow, HAND_LOCAL, 0.048), forearm, a.top === "longSleeve" ? 4 : 10);
+    add(capsule(elbow, hand, 0.048), forearm, a.top === "longSleeve" ? 4 : 10);
   }
-  add(sphere(HAND_LOCAL, 0.062), skin, 10);
+  add(sphere(hand, 0.062), skin, 10);
 
   // Neck wear.
   if (a.neck === "phaKhaoMa") add(roundBox([0, 0.56, -0.01], [0.15, 0.035, 0.125], 0.03), plaid(a.neckColor), 5);
@@ -229,6 +277,12 @@ function buildPrims(a: Avatar, pose: number): Prim[] {
     case "none":
       break;
   }
+  if (lift !== 0) {
+    for (let i = upperStart; i < prims.length; i++) {
+      const { sdf, color } = prims[i]!;
+      prims[i] = { ...prims[i]!, sdf: (x, y, z) => sdf(x, y - lift, z), color: (x, y, z) => color(x, y - lift, z) };
+    }
+  }
   return prims;
 }
 
@@ -274,7 +328,7 @@ function cellHash(x: number, y: number, z: number, size: number): number {
 
 // ---------- Baker ----------
 
-function bakeFrame(scene: Scene, prims: Prim[], azimuth: number, name: string): DynamicTexture {
+function bakeFrame(scene: Scene, prims: Prim[], center: V3, azimuth: number, name: string): DynamicTexture {
   // Camera sits at `azimuth` around the fisher (0 = in front, seeing the face), looking slightly down.
   const cp = Math.cos(BAKE_PITCH);
   const toCam = [Math.sin(azimuth) * cp, Math.sin(BAKE_PITCH), Math.cos(azimuth) * cp];
@@ -308,9 +362,9 @@ function bakeFrame(scene: Scene, prims: Prim[], azimuth: number, name: string): 
     for (let i = 0; i < W; i++) {
       const sx = (i + 0.5 - W / 2) * SPRITE_PX;
       const sy = (H / 2 - (j + 0.5)) * SPRITE_PX;
-      const ox = PLANE_CENTER[0] + r[0]! * sx + u[0]! * sy - d[0]! * 2;
-      const oy = PLANE_CENTER[1] + r[1]! * sx + u[1]! * sy - d[1]! * 2;
-      const oz = PLANE_CENTER[2] + r[2]! * sx + u[2]! * sy - d[2]! * 2;
+      const ox = center[0] + r[0]! * sx + u[0]! * sy - d[0]! * 2;
+      const oy = center[1] + r[1]! * sx + u[1]! * sy - d[1]! * 2;
+      const oz = center[2] + r[2]! * sx + u[2]! * sy - d[2]! * 2;
 
       let t = 0.8; // the character fits well within 1.2 m of the plane
       for (let step = 0; step < 64 && t < 3.2; step++) {

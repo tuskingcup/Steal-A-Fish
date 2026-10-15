@@ -90,6 +90,7 @@ export function App() {
           <button onClick={() => void window.saf.simulateComment("!สมุด")}>คอมเมนต์ !สมุด</button>
           <button onClick={() => void window.saf.simulateFollow()}>ติดตาม</button>
         </div>
+        <p className="hint">{th.cameraKeys}</p>
       </section>
 
       <section className="wide">

@@ -1,5 +1,5 @@
 /**
- * Tracks each viewer's score and who holds #1 (the crown, and the steal target).
+ * Tracks each viewer's score, who holds #1 (the crown, and the steal target) and the podium.
  *
  * Placeholder scoring until GameCore exists: points = fish caught (cast/net counts).
  * GameCore will feed the real ranking value (e.g. heaviest fish's weight_log10) instead.
@@ -26,6 +26,19 @@ export class Leaderboard {
 
   champion(): string | null {
     return this.championId;
+  }
+
+  /** Top `n` scorers, best first. The champion leads; other ties keep who got there first. */
+  top(n: number): string[] {
+    const ranked = [...this.scores.entries()]
+      .filter(([, s]) => s > 0)
+      .sort((a, b) => b[1] - a[1]) // stable: equal scores keep insertion order
+      .map(([id]) => id);
+    if (this.championId !== null) {
+      ranked.splice(ranked.indexOf(this.championId), 1);
+      ranked.unshift(this.championId);
+    }
+    return ranked.slice(0, n);
   }
 
   /** The current champion keeps the crown on a tie; a challenger must strictly beat them. */

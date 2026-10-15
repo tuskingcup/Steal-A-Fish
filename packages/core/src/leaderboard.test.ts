@@ -24,4 +24,16 @@ describe("Leaderboard", () => {
     expect(lb.set("a", 1)).toBe(true);
     expect(lb.champion()).toBe("b");
   });
+
+  it("lists the podium best first, champion leading ties", () => {
+    const lb = new Leaderboard();
+    lb.add("a", 2);
+    lb.add("b", 5);
+    lb.add("c", 2);
+    lb.add("d", 1);
+    expect(lb.top(3)).toEqual(["b", "a", "c"]);
+    lb.add("a", 3); // ties b; b keeps #1
+    expect(lb.top(3)).toEqual(["b", "a", "c"]);
+    expect(lb.top(10)).toEqual(["b", "a", "c", "d"]);
+  });
 });

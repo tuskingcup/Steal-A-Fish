@@ -13,7 +13,7 @@ export const IPC = {
   simComment: "sim:comment",
   simFollow: "sim:follow",
   gameAction: "game:action",
-  gameChampion: "game:champion",
+  gamePodium: "game:podium",
   logEntry: "log:entry",
 } as const;
 
@@ -29,8 +29,8 @@ export interface ConnectInput {
   signApiKey?: string;
 }
 
-/** Who holds #1 (wears the crown). */
-export interface Champion {
+/** A podium entry. The podium is ranks 1–3, best first; #1 wears the crown. */
+export interface RankedPlayer {
   userId: string;
   name: string;
 }
@@ -55,6 +55,6 @@ export interface SafApi {
   simulateFollow(): Promise<void>;
   onLiveState(listener: (state: ConnectionState) => void): () => void;
   onGameAction(listener: (action: FiredAction) => void): () => void;
-  onChampion(listener: (champion: Champion | null) => void): () => void;
+  onPodium(listener: (podium: RankedPlayer[]) => void): () => void;
   onLog(listener: (entry: LogEntry) => void): () => void;
 }

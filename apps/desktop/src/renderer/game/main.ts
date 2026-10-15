@@ -7,7 +7,8 @@ const tagLayer = document.getElementById("tags") as HTMLDivElement;
 (document.getElementById("title") as HTMLDivElement).textContent = th.gameTitle;
 (document.getElementById("pond") as HTMLDivElement).textContent = th.pondVillage;
 
-const { scene, camera, crew } = createPondScene(canvas, { userId: "host", name: th.hostName });
+const pond = createPondScene(canvas, { userId: "host", name: th.hostName });
+const { scene, camera, crew } = pond;
 
 const MAX_ITEMS = 5;
 
@@ -33,16 +34,28 @@ window.saf.onGameAction((fired) => {
   push(`<b>@${esc(who)}</b> → ${esc(describeAction(fired.action, fired.times))}`);
 });
 
-window.saf.onChampion((champion) => {
-  crew.setChampion(champion?.userId ?? null);
-  if (champion) push(`👑 <b>@${esc(champion.name)}</b> ${esc(th.newChampion)}`);
+let championId: string | null = null;
+window.saf.onPodium((podium) => {
+  crew.setPodium(podium.map((p) => p.userId));
+  const champion = podium[0];
+  if (champion && champion.userId !== championId) push(`👑 <b>@${esc(champion.name)}</b> ${esc(th.newChampion)}`);
+  championId = champion?.userId ?? null;
+});
+
+// ←/→ (or A/D) visit each fisher in turn; Esc goes back to the overview.
+window.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") pond.focusStep(1);
+  else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") pond.focusStep(-1);
+  else if (e.key === "Escape") pond.focusOverview();
+  else return;
+  e.preventDefault();
 });
 
 // Name tags are HTML over the canvas: crisper Thai text than drawing it in the 3D scene.
 const tags = new Map<string, HTMLDivElement>();
 scene.onAfterRenderObservable.add(() => {
   const seen = new Set<string>();
-  for (const t of crew.nameTags(camera)) {
+  for (const t of crew.nameTags(camera, pond.focusedId())) {
     seen.add(t.userId);
     let el = tags.get(t.userId);
     if (!el) {
@@ -50,7 +63,7 @@ scene.onAfterRenderObservable.add(() => {
       tagLayer.appendChild(el);
       tags.set(t.userId, el);
     }
-    const cls = t.isChampion ? "tag champion" : t.isHost ? "tag host" : "tag";
+    const cls = (t.isChampion ? "tag champion" : t.isHost ? "tag host" : "tag") + (t.isFocused ? " focus" : "");
     if (el.className !== cls) el.className = cls;
     if (el.textContent !== t.name) el.textContent = t.name;
     el.style.display = t.visible ? "" : "none";

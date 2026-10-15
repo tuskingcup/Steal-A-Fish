@@ -18,7 +18,7 @@ const api: SafApi = {
   simulateFollow: () => ipcRenderer.invoke(IPC.simFollow),
   onLiveState: (listener) => subscribe(IPC.liveState, listener),
   onGameAction: (listener) => subscribe(IPC.gameAction, listener),
-  onChampion: (listener) => subscribe(IPC.gameChampion, listener),
+  onPodium: (listener) => subscribe(IPC.gamePodium, listener),
   onLog: (listener) => subscribe(IPC.logEntry, listener),
 };
 

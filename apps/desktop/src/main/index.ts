@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { BrowserWindow, app, ipcMain, shell } from "electron";
 import { Leaderboard, RuleEngine, type FiredAction, type LiveEvent } from "@saf/core";
 import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/live";
-import { IPC, type Champion, type ConnectInput, type LogEntry, type SimGiftInput } from "../shared/api";
+import { IPC, type ConnectInput, type RankedPlayer, type LogEntry, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
 
 let gameWindow: BrowserWindow | null = null;
@@ -16,9 +16,18 @@ const leaderboard = new Leaderboard();
 /** Latest display name per userId (names change; ids don't). */
 const names = new Map<string, string>();
 
-function currentChampion(): Champion | null {
-  const id = leaderboard.champion();
-  return id === null ? null : { userId: id, name: names.get(id) ?? id };
+let lastPodium = "";
+
+function podium(): RankedPlayer[] {
+  return leaderboard.top(3).map((id) => ({ userId: id, name: names.get(id) ?? id }));
+}
+
+function sendPodium(force = false): void {
+  const list = podium();
+  const json = JSON.stringify(list);
+  if (!force && json === lastPodium) return;
+  lastPodium = json;
+  gameWindow?.webContents.send(IPC.gamePodium, list);
 }
 
 /** Placeholder scoring until GameCore: one point per fish caught. */
@@ -26,8 +35,9 @@ function score(fired: FiredAction): void {
   const { action, viewer, times } = fired;
   names.set(viewer.userId, viewer.nickname || viewer.uniqueId);
   const fish = action.type === "cast" || action.type === "net" ? action.count * times : 0;
-  if (fish > 0 && leaderboard.add(viewer.userId, fish)) {
-    gameWindow?.webContents.send(IPC.gameChampion, currentChampion());
+  if (fish > 0) {
+    leaderboard.add(viewer.userId, fish);
+    sendPodium();
   }
 }
 
@@ -135,8 +145,8 @@ app.whenReady().then(async () => {
   settingsWindow = createWindow("settings", { width: 1100, height: 780, title: "Steal A Fish — Settings", backgroundColor: "#0E1C24" });
 
   gameWindow.on("closed", () => (gameWindow = null));
-  // A reloaded game window (e.g. dev HMR) still shows the current crown.
-  gameWindow.webContents.on("did-finish-load", () => gameWindow?.webContents.send(IPC.gameChampion, currentChampion()));
+  // A reloaded game window (e.g. dev HMR) still shows the current podium.
+  gameWindow.webContents.on("did-finish-load", () => sendPodium(true));
   settingsWindow.on("closed", () => (settingsWindow = null));
 
   app.on("before-quit", () => {
