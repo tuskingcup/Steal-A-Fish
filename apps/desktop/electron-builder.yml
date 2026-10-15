@@ -14,11 +14,18 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName}-${version}-${os}-${arch}-${target}.${ext}
+    # Plain zip of the app: needs no Wine, so it can be built on a Mac too (pnpm dist:win-zip).
+    - target: zip
+      arch: [x64]
+  # The zip's name; nsis and portable set their own below.
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
 nsis:
+  artifactName: ${productName}-${version}-win-${arch}-setup.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+portable:
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
 mac:
   target:
     - target: dmg

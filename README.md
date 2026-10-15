@@ -30,6 +30,18 @@ pnpm test
 pnpm typecheck
 ```
 
+### Packaging
+
+Installers land in `apps/desktop/release/<version>/`.
+
+| Command | Output | Build on |
+|---|---|---|
+| `pnpm --filter @saf/desktop dist:mac` | `Steal A Fish-<version>-mac-universal.dmg` | macOS |
+| `pnpm --filter @saf/desktop dist:win` | `…-win-x64-setup.exe` (installer), `…-win-x64-portable.exe`, `…-win-x64.zip` | Windows, or macOS/Linux with [Wine](https://www.winehq.org/) |
+| `pnpm --filter @saf/desktop dist:win-zip` | `…-win-x64.zip` (unzip and run `Steal A Fish.exe`) | anywhere, no Wine needed |
+
+Pushing a `v*` tag builds the Windows and macOS installers on GitHub Actions and attaches them to a draft release; running the **Release** workflow by hand (Actions → Release → Run workflow) builds them from any branch as downloadable artifacts.
+
 Project context, architecture and conventions are in [CLAUDE.md](CLAUDE.md).
 
-Coins and fish have no real-world value and cannot be exchanged or traded.
+Points and fish have no real-world value and cannot be exchanged or traded.
