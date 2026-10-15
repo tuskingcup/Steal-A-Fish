@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
@@ -134,65 +134,100 @@ function rod(scene: Scene, a: Vector3, b: Vector3, thickness: number, hex: strin
   return solidPaint(m, hex);
 }
 
-function tailTris(kind: Tail, h: number): [number, number][][] {
+/**
+ * Tail fin around the pivot (x = 0), with a base `b` tall that reaches forward into the body
+ * (x > 0) so the tail never looks detached while it wiggles.
+ */
+/**
+ * A paired fin rooted at `at`, swept back along -x and tilted out from the body by `splay`
+ * (0 = flat against the flank, π/2 = straight down/out).
+ */
+function sideFin(scene: Scene, name: string, at: Vector3, side: number, splay: number, len: number, hex: string): Mesh {
+  const fin = finMesh(scene, name, [[[0.03, 0.012], [-len, -len * 0.25], [-len * 0.55, -len * 0.55]], [[0.03, 0.012], [-len * 0.55, -len * 0.55], [0.0, -0.02]]], 0, hex);
+  fin.rotation.x = side * splay;
+  fin.position = at;
+  fin.bakeCurrentTransformIntoVertices();
+  return fin;
+}
+
+function tailTris(kind: Tail, h: number, b: number): [number, number][][] {
   const s = h * 0.95;
+  const base: [number, number][][] = [
+    [[0.07, b], [0, b], [0, -b]],
+    [[0.07, b], [0, -b], [0.07, -b]],
+  ];
+  const lobes = (upTip: [number, number], notch: [number, number], downTip: [number, number]): [number, number][][] => [
+    [[0, b], upTip, notch],
+    [[0, b], notch, [0, -b]],
+    [[0, -b], notch, downTip],
+  ];
   switch (kind) {
     case "fork":
-      return [
-        [[0, 0], [-0.32, s], [-0.18, 0]],
-        [[0, 0], [-0.18, 0], [-0.32, -s]],
-      ];
+      return [...base, ...lobes([-0.32, s], [-0.17, 0], [-0.32, -s])];
     case "shark":
-      return [
-        [[0, 0], [-0.3, s * 1.25], [-0.16, 0]],
-        [[0, 0], [-0.16, 0], [-0.24, -s * 0.85]],
-      ];
+      return [...base, ...lobes([-0.3, s * 1.25], [-0.15, 0], [-0.24, -s * 0.85])];
     case "fan":
-      return [
-        [[0, 0], [-0.26, s * 0.9], [-0.3, 0]],
-        [[0, 0], [-0.3, 0], [-0.26, -s * 0.9]],
-      ];
+      return [...base, ...lobes([-0.26, s * 0.9], [-0.3, 0], [-0.26, -s * 0.9])];
     case "long":
-      return [
-        [[0, 0], [-0.45, s * 0.4], [-0.4, 0]],
-        [[0, 0], [-0.4, 0], [-0.45, -s * 0.4]],
-      ];
+      return [...base, ...lobes([-0.45, s * 0.4], [-0.4, 0], [-0.45, -s * 0.4])];
     case "round":
       return [
-        [[0, 0], [-0.2, s * 0.7], [-0.26, s * 0.3]],
-        [[0, 0], [-0.26, s * 0.3], [-0.26, -s * 0.3]],
-        [[0, 0], [-0.26, -s * 0.3], [-0.2, -s * 0.7]],
+        ...base,
+        [[0, b], [-0.2, s * 0.7], [-0.26, s * 0.3]],
+        [[0, b], [-0.26, s * 0.3], [0, -b]],
+        [[0, -b], [-0.26, s * 0.3], [-0.26, -s * 0.3]],
+        [[0, -b], [-0.26, -s * 0.3], [-0.2, -s * 0.7]],
       ];
   }
 }
 
-/** Body top/bottom edge height at x (to seat fins on the body). */
-function edgeAt(look: FishLook, x: number, top: boolean): number {
-  const h = look.height / 2;
-  const t = x < 0 ? 1 - Math.pow(Math.abs(x) / 0.5, look.taper) * 0.8 : 1 - Math.pow(x / 0.5, 2) * 0.3;
-  if (top) return h * t + look.hump * (1 - Math.pow(x / 0.5, 2));
-  return -h * t * (1 + look.belly * 3 * (1 - Math.abs(x) * 2));
+/** Taper of the body cross-section along its length (thick middle, thin tail, blunt head). */
+function bodyTaper(look: FishLook, x: number): number {
+  return x < 0 ? 1 - Math.pow(Math.abs(x) / 0.5, look.taper) * 0.8 : 1 - Math.pow(x / 0.5, 2) * 0.3;
 }
 
+/** Height of a body vertex after the species shaping (hump, flat head, belly, upturned mouth). */
+function shapeY(look: FishLook, x: number, y: number): number {
+  const h = look.height;
+  y *= bodyTaper(look, x);
+  if (y > 0) {
+    y += look.hump * (1 - Math.pow(x / 0.5, 2)) * (y / (h / 2));
+    if (x > 0.15) y *= 1 - look.headFlat * ((x - 0.15) / 0.35);
+  } else {
+    y *= 1 + look.belly * 3 * (1 - Math.abs(x) * 2);
+  }
+  if (look.mouth === "up" && x > 0.3) y += (x - 0.3) * 0.25;
+  return y;
+}
+
+/** Body top/bottom edge at x, exactly as the body mesh is shaped. */
+function edgeAt(look: FishLook, x: number, top: boolean): number {
+  const r = (look.height / 2) * Math.sqrt(Math.max(0, 1 - 4 * x * x));
+  return shapeY(look, x, top ? r : -r);
+}
+
+/** Fins start this far inside the body, so the low-poly surface never shows a gap under them. */
+const FIN_INSET = 0.035;
+
 function dorsalTris(look: FishLook): [number, number][][] {
-  const top = (x: number) => edgeAt(look, x, true) - 0.01;
+  const top = (x: number) => edgeAt(look, x, true) - FIN_INSET;
   switch (look.dorsal) {
     case "small":
-      return [[[-0.06, top(-0.06)], [0.04, top(0.04) + 0.12], [0.12, top(0.12)]]];
+      return [[[-0.06, top(-0.06)], [0.04, top(0.04) + FIN_INSET + 0.12], [0.12, top(0.12)]]];
     case "rear":
-      return [[[-0.42, top(-0.42)], [-0.36, top(-0.36) + 0.12], [-0.24, top(-0.24)]]];
+      return [[[-0.42, top(-0.42)], [-0.36, top(-0.36) + FIN_INSET + 0.12], [-0.24, top(-0.24)]]];
     case "sail":
-      return [[[-0.04, top(-0.04)], [0.08, top(0.08) + 0.3], [0.16, top(0.16)]]];
+      return [[[-0.04, top(-0.04)], [0.08, top(0.08) + FIN_INSET + 0.3], [0.16, top(0.16)]]];
     case "long": {
       const tris: [number, number][][] = [];
-      for (let x = -0.4; x < 0.18; x += 0.08) tris.push([[x, top(x)], [x + 0.04, top(x + 0.04) + 0.06], [x + 0.08, top(x + 0.08)]], [[x, top(x)], [x + 0.08, top(x + 0.08)], [x + 0.04, top(x + 0.04) + 0.06]]);
+      for (let x = -0.4; x < 0.18; x += 0.08) tris.push([[x, top(x)], [x + 0.04, top(x + 0.04) + FIN_INSET + 0.06], [x + 0.08, top(x + 0.08)]], [[x, top(x)], [x + 0.08, top(x + 0.08)], [x + 0.04, top(x + 0.04) + FIN_INSET + 0.06]]);
       return tris;
     }
     case "spiny": {
       const tris: [number, number][][] = [];
       for (let i = 0; i < 9; i++) {
         const x = 0.2 - i * 0.05;
-        tris.push([[x, top(x)], [x - 0.012, top(x) + 0.13 - Math.abs(i - 3) * 0.008], [x - 0.05, top(x - 0.05) + 0.05]]);
+        tris.push([[x, top(x)], [x - 0.012, top(x) + FIN_INSET + 0.12 - Math.abs(i - 3) * 0.008], [x - 0.05, top(x - 0.05) + FIN_INSET + 0.045]], [[x, top(x)], [x - 0.05, top(x - 0.05) + FIN_INSET + 0.045], [x - 0.05, top(x - 0.05)]]);
       }
       return tris;
     }
@@ -200,22 +235,22 @@ function dorsalTris(look: FishLook): [number, number][][] {
 }
 
 function analTris(look: FishLook): [number, number][][] {
-  const bot = (x: number) => edgeAt(look, x, false) + 0.01;
+  const bot = (x: number) => edgeAt(look, x, false) + FIN_INSET;
   switch (look.anal) {
     case "short":
-      return [[[-0.3, bot(-0.3)], [-0.12, bot(-0.12) - 0.09], [-0.05, bot(-0.05)]]];
+      return [[[-0.3, bot(-0.3)], [-0.12, bot(-0.12) - FIN_INSET - 0.09], [-0.05, bot(-0.05)]]];
     case "rear":
-      return [[[-0.42, bot(-0.42)], [-0.34, bot(-0.34) - 0.1], [-0.24, bot(-0.24)]]];
+      return [[[-0.42, bot(-0.42)], [-0.34, bot(-0.34) - FIN_INSET - 0.1], [-0.24, bot(-0.24)]]];
     case "long": {
       const tris: [number, number][][] = [];
-      for (let x = -0.42; x < 0.04; x += 0.08) tris.push([[x, bot(x)], [x + 0.04, bot(x + 0.04) - 0.05], [x + 0.08, bot(x + 0.08)]]);
+      for (let x = -0.42; x < 0.04; x += 0.08) tris.push([[x, bot(x)], [x + 0.04, bot(x + 0.04) - FIN_INSET - 0.05], [x + 0.08, bot(x + 0.08)]]);
       return tris;
     }
     case "ribbon": {
       // Featherback: one long wavy fin along the belly that runs into the tail.
       const tris: [number, number][][] = [];
       for (let x = -0.5; x < 0.14; x += 0.04) {
-        const depth = 0.07 + Math.sin(x * 22) * 0.015;
+        const depth = FIN_INSET + 0.07 + Math.sin(x * 22) * 0.015;
         tris.push([[x, bot(x)], [x, bot(x) - depth], [x + 0.04, bot(x + 0.04)]], [[x + 0.04, bot(x + 0.04)], [x, bot(x) - depth], [x + 0.04, bot(x + 0.04) - depth]]);
       }
       return tris;
@@ -244,24 +279,13 @@ function speciesModel(scene: Scene, speciesId: string): SpeciesModel {
   const h = look.height;
 
   // Body: an ellipsoid shaped per species — tapered tail, flat head, hump, deep belly, wide mouth.
-  const body = CreateSphere(`fishBody_${speciesId}`, { segments: 8, diameterX: 1, diameterY: h, diameterZ: look.width }, scene);
+  const body = CreateSphere(`fishBody_${speciesId}`, { segments: 12, diameterX: 1, diameterY: h, diameterZ: look.width }, scene);
   const pos = body.getVerticesData(VertexBuffer.PositionKind)!;
   for (let i = 0; i < pos.length; i += 3) {
     const x = pos[i]!;
-    let y = pos[i + 1]!;
-    let z = pos[i + 2]!;
-    const t = x < 0 ? 1 - Math.pow(Math.abs(x) / 0.5, look.taper) * 0.8 : 1 - Math.pow(x / 0.5, 2) * 0.3;
-    y *= t;
-    z *= t;
-    if (y > 0) {
-      y += look.hump * (1 - Math.pow(x / 0.5, 2)) * (y / (h / 2));
-      if (x > 0.15) y *= 1 - look.headFlat * ((x - 0.15) / 0.35);
-    } else {
-      y *= 1 + look.belly * 3 * (1 - Math.abs(x) * 2);
-    }
+    let z = pos[i + 2]! * bodyTaper(look, x);
     if (look.mouth === "wide" && x > 0.25) z *= 1 + 0.5 * ((x - 0.25) / 0.25);
-    if (look.mouth === "up" && x > 0.3) y += (x - 0.3) * 0.25;
-    pos[i + 1] = y;
+    pos[i + 1] = shapeY(look, x, pos[i + 1]!);
     pos[i + 2] = z;
   }
   body.setVerticesData(VertexBuffer.PositionKind, pos);
@@ -315,7 +339,12 @@ function speciesModel(scene: Scene, speciesId: string): SpeciesModel {
     pupil.position = new Vector3(eyeX + look.eye * 0.2, eyeY, zEye + side * look.eye * 0.45);
     pupil.bakeCurrentTransformIntoVertices();
     parts.push(white, pupil);
-    parts.push(finMesh(scene, `pec${side}`, [[[0.2, -h * 0.15], [0.02, -h * 0.32], [0.08, -h * 0.12]]], side * look.width * 0.45, look.fin));
+    // Pectoral fin just behind the gill, swept back and splayed out from the flank.
+    const halfW = (x: number) => (look.width / 2) * Math.sqrt(1 - 4 * x * x) * bodyTaper(look, x);
+    parts.push(sideFin(scene, `pec${side}`, new Vector3(0.2, -h * 0.1, side * (halfW(0.2) - 0.01)), side, 0.55, h * 0.4, look.fin));
+    // Pelvic fin under the belly, pointing down and back.
+    const pelvicY = edgeAt(look, 0.08, false) * 0.75;
+    parts.push(sideFin(scene, `pelvic${side}`, new Vector3(0.1, pelvicY, side * halfW(0.08) * 0.45), side, 1.15, h * 0.3, look.fin));
 
     if (look.barbels) {
       const [pairs, len] = look.barbels;
@@ -350,7 +379,8 @@ function speciesModel(scene: Scene, speciesId: string): SpeciesModel {
   const merged = Mesh.MergeMeshes(parts, true)!;
   merged.name = `fish_${speciesId}`;
   merged.isVisible = false;
-  const tail = finMesh(scene, `fishTail_${speciesId}`, tailTris(look.tail, h), 0, look.fin);
+  const tailBase = Math.max(0.012, edgeAt(look, -0.4, true) * 0.8);
+  const tail = finMesh(scene, `fishTail_${speciesId}`, tailTris(look.tail, h, tailBase), 0, look.fin);
   tail.isVisible = false;
 
   const model = { body: merged, tail };
@@ -491,34 +521,40 @@ export function createFishModel(scene: Scene, speciesId: string, mutations: read
 // ---------- พญานาค: a three-headed Thai naga ----------
 
 const NAGA_POINTS = 44;
-const nagaMats = new WeakMap<Scene, { scales: StandardMaterial; gold: StandardMaterial; flame: StandardMaterial; mouth: StandardMaterial; fang: StandardMaterial; eye: StandardMaterial }>();
+type NagaMats = Record<"scales" | "headScales" | "gold" | "flame" | "mouth" | "fang" | "eye" | "pupil", StandardMaterial>;
+const nagaMats = new WeakMap<Scene, NagaMats>();
 
-function nagaMaterials(scene: Scene) {
+function nagaMaterials(scene: Scene): NagaMats {
   const hit = nagaMats.get(scene);
   if (hit) return hit;
   // Green-gold scales: overlapping arcs, a gold rim on each.
-  const tex = new DynamicTexture("nagaScales", { width: 64, height: 64 }, scene, true);
-  const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
-  ctx.fillStyle = "#145C38";
-  ctx.fillRect(0, 0, 64, 64);
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      const cx = col * 16 + (row % 2 ? 8 : 0);
-      const cy = row * 14;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 9, 0, Math.PI);
-      ctx.fillStyle = row % 2 ? "#1F8A4C" : "#1A7A44";
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#E8B73C";
-      ctx.stroke();
+  const scaleTexture = (name: string, uScale: number, vScale: number): DynamicTexture => {
+    const tex = new DynamicTexture(name, { width: 64, height: 64 }, scene, true);
+    const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
+    ctx.fillStyle = "#145C38";
+    ctx.fillRect(0, 0, 64, 64);
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 5; col++) {
+        const cx = col * 16 + (row % 2 ? 8 : 0);
+        const cy = row * 14;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 9, 0, Math.PI);
+        ctx.fillStyle = row % 2 ? "#1F8A4C" : "#1A7A44";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#E8B73C";
+        ctx.stroke();
+      }
     }
-  }
-  tex.update();
-  tex.wrapU = Texture.WRAP_ADDRESSMODE;
-  tex.wrapV = Texture.WRAP_ADDRESSMODE;
-  tex.uScale = 3;
-  tex.vScale = 26;
+    tex.update();
+    tex.wrapU = Texture.WRAP_ADDRESSMODE;
+    tex.wrapV = Texture.WRAP_ADDRESSMODE;
+    tex.uScale = uScale;
+    tex.vScale = vScale;
+    return tex;
+  };
+  // The body tube stretches the pattern along its length; heads use it at their own size.
+  const tex = scaleTexture("nagaScales", 3, 26);
   const scales = new StandardMaterial("nagaScalesMat", scene);
   scales.diffuseTexture = tex;
   scales.emissiveColor = new Color3(0.08, 0.16, 0.1);
@@ -538,11 +574,17 @@ function nagaMaterials(scene: Scene) {
   const fang = new StandardMaterial("nagaFang", scene);
   fang.diffuseColor = Color3.FromHexString("#FFF8E8");
   fang.emissiveColor = Color3.FromHexString("#5A554C");
+  gold.backFaceCulling = false; // flame plates are single sheets
   const eye = new StandardMaterial("nagaEye", scene);
   eye.diffuseColor = Color3.FromHexString("#FFD23F");
-  eye.emissiveColor = Color3.FromHexString("#FFB000");
+  eye.emissiveColor = Color3.FromHexString("#FF8A00");
   eye.disableLighting = true;
-  const mats = { scales, gold, flame, mouth, fang, eye };
+  const pupil = new StandardMaterial("nagaPupil", scene);
+  pupil.diffuseColor = Color3.Black();
+  pupil.disableLighting = true;
+  const headScales = scales.clone("nagaHeadScalesMat");
+  headScales.diffuseTexture = scaleTexture("nagaHeadScales", 3, 3);
+  const mats = { scales, headScales, gold, flame, mouth, fang, eye, pupil };
   nagaMats.set(scene, mats);
   return mats;
 }
@@ -593,6 +635,7 @@ function createNaga(scene: Scene, finish: Finish): FishModel {
   const headRoot = new TransformNode("nagaHeads", scene);
   headRoot.parent = root;
   const heads: TransformNode[] = [];
+  const jaws: TransformNode[] = [];
   for (const [i, side] of [-1, 0, 1].entries()) {
     const big = side === 0 ? 1.55 : 1.3;
     const pivot = new TransformNode(`nagaNeck${i}`, scene);
@@ -614,47 +657,7 @@ function createNaga(scene: Scene, finish: Finish): FishModel {
       meshes.push(mesh);
       return mesh;
     };
-    const skull = add(CreateIcoSphere("skull", { radius: 0.04, subdivisions: 2 }, scene), skin);
-    skull.scaling = new Vector3(1.35, 0.9, 1);
-    // Tapered snout and an open lower jaw (cones lying along +x), red mouth between them.
-    const snout = add(CreateCylinder("snout", { height: 0.08, diameterTop: 0.022, diameterBottom: 0.055, tessellation: 8 }, scene), skin);
-    snout.rotation.z = -Math.PI / 2;
-    snout.position = new Vector3(0.065, 0.004, 0);
-    snout.scaling.z = 1.15;
-    const jaw = add(CreateCylinder("jaw", { height: 0.075, diameterTop: 0.012, diameterBottom: 0.04, tessellation: 8 }, scene), skin);
-    jaw.rotation.z = -Math.PI / 2 - 0.45;
-    jaw.position = new Vector3(0.05, -0.03, 0);
-    const mouth = add(CreateCylinder("mouth", { height: 0.06, diameterTop: 0.01, diameterBottom: 0.04, tessellation: 8 }, scene), mats.mouth);
-    mouth.rotation.z = -Math.PI / 2 - 0.2;
-    mouth.position = new Vector3(0.05, -0.014, 0);
-    for (const z of [-0.014, 0.014]) {
-      const fang = add(CreateCylinder("fang", { height: 0.022, diameterTop: 0, diameterBottom: 0.008, tessellation: 4 }, scene), mats.fang);
-      fang.position = new Vector3(0.075, -0.016, z);
-      fang.rotation.z = Math.PI;
-      const eye = add(CreateIcoSphere("eye", { radius: 0.009, subdivisions: 1 }, scene), mats.eye);
-      eye.position = new Vector3(0.025, 0.022, z * 1.9);
-      // Whiskers curling back from the snout.
-      const whisker = add(CreateCylinder("whisker", { height: 0.09, diameter: 0.004, tessellation: 4 }, scene), mats.gold);
-      whisker.position = new Vector3(0.05, -0.005, z * 2.4);
-      whisker.rotation = new Vector3(z > 0 ? 0.9 : -0.9, 0, 1.2);
-    }
-    // Gold crown (มงกุฎ): a tall spire on a band, small points around it.
-    const band = add(CreateCylinder("crownBand", { height: 0.016, diameter: 0.05, tessellation: 8 }, scene), mats.gold);
-    band.position = new Vector3(-0.005, 0.036, 0);
-    const spire = add(CreateCylinder("crownSpire", { height: 0.08, diameterTop: 0, diameterBottom: 0.034, tessellation: 8 }, scene), mats.gold);
-    spire.position = new Vector3(-0.005, 0.083, 0);
-    for (let p = 0; p < 4; p++) {
-      const a = (p / 4) * Math.PI * 2;
-      const point = add(CreateCylinder("crownPoint", { height: 0.03, diameterTop: 0, diameterBottom: 0.012, tessellation: 4 }, scene), mats.gold);
-      point.position = new Vector3(-0.005 + Math.cos(a) * 0.022, 0.055, Math.sin(a) * 0.022);
-    }
-    // Flame frill fanning out behind the head.
-    for (let p = 0; p < 5; p++) {
-      const fl = add(CreateCylinder("frill", { height: 0.07, diameterTop: 0, diameterBottom: 0.022, tessellation: 4 }, scene), p % 2 ? mats.gold : mats.flame);
-      const a = -0.9 + p * 0.45;
-      fl.position = new Vector3(-0.045 + Math.cos(a) * -0.01, 0.01 + Math.sin(a) * 0.02, Math.sin(a) * 0.035);
-      fl.rotation = new Vector3(a * 0.9, 0, 1.2);
-    }
+    jaws.push(buildNagaHead(scene, head, mats, finish === "normal" ? mats.headScales : skin, add));
   }
 
   const tangent = new Vector3();
@@ -681,9 +684,193 @@ function createNaga(scene: Scene, finish: Finish): FishModel {
         h.rotation.z = Math.sin(t * 1.3 + i * 2) * 0.12;
         h.rotation.y = Math.sin(t * 0.9 + i) * 0.15;
       });
+      // Jaws open in a slow roar, each head out of step.
+      jaws.forEach((j, i) => {
+        j.rotation.z = -0.32 - Math.max(0, Math.sin(t * 1.1 + i * 2.1)) * 0.22;
+      });
     },
     dispose() {
       root.dispose(); // naga meshes are its own; shared materials stay cached
     },
   };
+}
+
+// ---------- Naga head ----------
+
+/** Point a part: local +x along `dir`, local +y towards `up`. */
+function orient(mesh: TransformNode, dir: Vector3, up: Vector3): void {
+  const x = dir.normalizeToNew();
+  const y = up.subtract(x.scale(Vector3.Dot(x, up))).normalize();
+  const z = Vector3.Cross(x, y);
+  mesh.rotationQuaternion = Quaternion.RotationQuaternionFromAxis(x, y, z);
+}
+
+/**
+ * A flame tongue (กนก): a flat, tapering blade along +x whose tip curls towards +y.
+ * `curl` is the total turn in radians.
+ */
+function flameBlade(scene: Scene, len: number, width: number, curl: number): Mesh {
+  const n = 9;
+  const pts: Vector3[] = [];
+  let p = Vector3.Zero();
+  for (let i = 0; i <= n; i++) {
+    const s = i / n;
+    pts.push(p);
+    const heading = curl * s * s;
+    p = p.add(new Vector3(Math.cos(heading), Math.sin(heading), 0).scale(len / n));
+  }
+  const positions: number[] = [];
+  const edge = (i: number, sign: number) => {
+    const s = i / n;
+    const heading = curl * s * s;
+    const w = width * Math.pow(1 - s, 0.85) * (0.55 + 0.45 * Math.sin(Math.min(1, s * 2.2) * Math.PI * 0.5));
+    return pts[i]!.add(new Vector3(-Math.sin(heading), Math.cos(heading), 0).scale((sign * w) / 2));
+  };
+  for (let i = 0; i < n; i++) {
+    const [a, b, c, d] = [edge(i, 1), edge(i, -1), edge(i + 1, 1), edge(i + 1, -1)];
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, c.x, c.y, c.z, b.x, b.y, b.z, d.x, d.y, d.z);
+  }
+  const mesh = new Mesh("flameBlade", scene);
+  const data = new VertexData();
+  data.positions = positions;
+  data.indices = Array.from({ length: positions.length / 3 }, (_, i) => i);
+  const normals: number[] = [];
+  VertexData.ComputeNormals(positions, data.indices, normals);
+  data.normals = normals;
+  data.applyToMesh(mesh);
+  return mesh;
+}
+
+/** A curling whisker (หนวด): a thin gold tube sweeping back from the snout and rolling up. */
+function whisker(scene: Scene, side: number): Mesh {
+  const path: Vector3[] = [];
+  for (let i = 0; i <= 14; i++) {
+    const s = i / 14;
+    const roll = s * s * 4.2;
+    path.push(new Vector3(-0.1 * s + Math.sin(roll) * 0.012 * s, -0.012 * s + (1 - Math.cos(roll)) * 0.014 * s, side * (0.035 * s + 0.008 * Math.sin(s * 3))));
+  }
+  return CreateTube("whisker", { path, radiusFunction: (i) => 0.0034 * (1 - (i / 14) * 0.75), tessellation: 5, cap: Mesh.CAP_ALL }, scene);
+}
+
+/**
+ * One naga head, about 0.13 long, facing +x: a sculpted skull with heavy brows, an upturned snout
+ * and an open jaw full of fangs, glowing slit eyes, flame brows, curling whiskers, a hood of flame
+ * tongues and a tiered Thai crown (ชฎา). Returns the jaw hinge (animated).
+ */
+function buildNagaHead(scene: Scene, head: TransformNode, mats: NagaMats, skin: StandardMaterial, add: (m: Mesh, mat: StandardMaterial) => Mesh): TransformNode {
+  // Skull: a sphere pushed into a wedge — wide brows, narrow snout, nose tip curling up.
+  const skull = CreateSphere("skull", { segments: 10, diameterX: 0.13, diameterY: 0.06, diameterZ: 0.07 }, scene);
+  const pos = skull.getVerticesData(VertexBuffer.PositionKind)!;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i]!;
+    let y = pos[i + 1]!;
+    let z = pos[i + 2]!;
+    const u = (x + 0.065) / 0.13; // 0 back … 1 nose
+    z *= 1 - 0.5 * smooth(0.4, 1, u);
+    if (y > 0) {
+      y *= 0.8 - 0.35 * smooth(0.5, 1, u);
+      // Brow ridges over the eyes.
+      y += 0.014 * Math.exp(-Math.pow((u - 0.42) / 0.12, 2)) * smooth(0.01, 0.03, Math.abs(z));
+    } else {
+      y *= 0.55;
+    }
+    y += 0.03 * smooth(0.82, 1, u) * smooth(0.82, 1, u); // upturned nose
+    pos[i + 1] = y;
+    pos[i + 2] = z;
+  }
+  skull.setVerticesData(VertexBuffer.PositionKind, pos);
+  skull.convertToFlatShadedMesh();
+  add(skull, skin);
+
+  // Lower jaw on a hinge at the back of the mouth.
+  const hinge = new TransformNode("jawHinge", scene);
+  hinge.parent = head;
+  hinge.position.set(-0.03, -0.012, 0);
+  hinge.rotation.z = -0.35;
+  const jaw = CreateSphere("jaw", { segments: 8, diameterX: 0.105, diameterY: 0.022, diameterZ: 0.048 }, scene);
+  const jp = jaw.getVerticesData(VertexBuffer.PositionKind)!;
+  for (let i = 0; i < jp.length; i += 3) jp[i + 2] = jp[i + 2]! * (1 - 0.45 * smooth(-0.02, 0.05, jp[i]!));
+  jaw.setVerticesData(VertexBuffer.PositionKind, jp);
+  jaw.convertToFlatShadedMesh();
+  add(jaw, skin).parent = hinge;
+  jaw.position.set(0.05, -0.004, 0);
+  const tongueBed = add(CreateSphere("mouth", { segments: 6, diameterX: 0.09, diameterY: 0.012, diameterZ: 0.036 }, scene), mats.mouth);
+  tongueBed.parent = hinge;
+  tongueBed.position.set(0.045, 0.006, 0);
+  // Forked tongue.
+  const tongue = add(CreateBox("tongue", { width: 0.04, height: 0.0025, depth: 0.004 }, scene), mats.mouth);
+  tongue.parent = hinge;
+  tongue.position.set(0.075, 0.008, 0);
+  tongue.rotation.z = 0.2;
+  for (const z of [-1, 1]) {
+    const prong = add(CreateBox("tongueFork", { width: 0.014, height: 0.002, depth: 0.0025 }, scene), mats.mouth);
+    prong.parent = hinge;
+    prong.position.set(0.099, 0.013, z * 0.004);
+    prong.rotation.set(0, z * 0.55, 0.2);
+  }
+  // Roof of the mouth, so the open jaw shows red, not the inside of the skull.
+  const palate = add(CreateSphere("palate", { segments: 6, diameterX: 0.09, diameterY: 0.01, diameterZ: 0.034 }, scene), mats.mouth);
+  palate.position.set(0.02, -0.014, 0);
+
+  for (const side of [-1, 1]) {
+    // Fangs: long curved upper ones near the front, small lower ones on the jaw.
+    for (const [x, len] of [[0.045, 0.034], [0.02, 0.018]] as const) {
+      const fang = add(CreateCylinder("fang", { height: len, diameterTop: 0, diameterBottom: 0.009, tessellation: 5 }, scene), mats.fang);
+      fang.position.set(x, -0.016 - len * 0.4, side * 0.013);
+      fang.rotation.set(side * 0.12, 0, Math.PI + 0.25);
+    }
+    const low = add(CreateCylinder("fangLow", { height: 0.016, diameterTop: 0, diameterBottom: 0.007, tessellation: 5 }, scene), mats.fang);
+    low.parent = hinge;
+    low.position.set(0.075, 0.01, side * 0.011);
+    low.rotation.z = -0.2;
+
+    // Glowing eye under the brow, a black slit pupil, angled forward.
+    const eye = add(CreateSphere("eye", { segments: 6, diameterX: 0.022, diameterY: 0.013, diameterZ: 0.01 }, scene), mats.eye);
+    eye.position.set(0.012, 0.012, side * 0.024);
+    eye.rotation.set(0, side * 0.45, side * -0.15);
+    const slit = add(CreateBox("pupil", { width: 0.003, height: 0.012, depth: 0.004 }, scene), mats.pupil);
+    slit.position.set(0.014, 0.012, side * 0.0285);
+    slit.rotation.y = side * 0.45;
+
+    // Flame brows sweeping back from above each eye.
+    const brow = add(flameBlade(scene, 0.07, 0.016, 1.3), mats.gold);
+    brow.position.set(0.022, 0.02, side * 0.022);
+    orient(brow, new Vector3(-1, 0.45, side * 0.55), new Vector3(0, 1, 0));
+
+    // Whiskers from the corners of the snout.
+    const w = add(whisker(scene, side), mats.gold);
+    w.position.set(0.05, -0.002, side * 0.014);
+
+    // Cheek flames fanning back below the eye.
+    const cheek = add(flameBlade(scene, 0.05, 0.014, -1.1), mats.flame);
+    cheek.position.set(-0.01, -0.008, side * 0.024);
+    orient(cheek, new Vector3(-1, -0.35, side * 0.7), new Vector3(0, -1, 0));
+  }
+
+  // Hood: a fan of flame tongues behind the head, gold outside and red within, tips curling back.
+  for (let k = 0; k < 7; k++) {
+    const a = -1 + (k / 6) * 2; // an arc over the top of the head
+    const outer = add(flameBlade(scene, 0.085 - Math.abs(a) * 0.02, 0.03, -1.2), mats.gold);
+    outer.position.set(-0.045, 0.006, 0);
+    orient(outer, new Vector3(-0.45, Math.cos(a), Math.sin(a)), new Vector3(-1, 0, 0));
+    if (k % 2 === 0) {
+      const inner = add(flameBlade(scene, 0.06 - Math.abs(a) * 0.012, 0.02, -1.4), mats.flame);
+      inner.position.set(-0.04, 0.008, 0);
+      orient(inner, new Vector3(-0.3, Math.cos(a), Math.sin(a)), new Vector3(-1, 0, 0));
+    }
+  }
+
+  // Tiered Thai crown (ชฎา): stacked rings narrowing to a slim spire with a red jewel.
+  let y = 0.026;
+  for (let tier = 0; tier < 4; tier++) {
+    const d = 0.028 - tier * 0.005;
+    const ring = add(CreateCylinder("crownTier", { height: 0.008, diameterTop: d * 0.8, diameterBottom: d, tessellation: 10 }, scene), mats.gold);
+    ring.position.set(-0.012, y + 0.004, 0);
+    y += 0.0075;
+  }
+  const spire = add(CreateCylinder("crownSpire", { height: 0.034, diameterTop: 0, diameterBottom: 0.009, tessellation: 8 }, scene), mats.gold);
+  spire.position.set(-0.012, y + 0.017, 0);
+  const jewel = add(CreateIcoSphere("crownJewel", { radius: 0.0055, subdivisions: 1 }, scene), mats.flame);
+  jewel.position.set(-0.012, 0.031, 0.017);
+  return hinge;
 }
