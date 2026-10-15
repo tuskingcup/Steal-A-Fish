@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createSeededRng } from "./rng";
 import { RoundGame, sumLog10, type RoundConfig } from "./round";
+import { defaultRulesConfig } from "./defaultRules";
+import { RARITIES } from "./fish";
 
 const CONFIG: RoundConfig = { roundMs: 300_000, summaryMs: 60_000, autoCastMs: 30_000, firstCastMs: 3_000 };
 const newGame = () => new RoundGame(createSeededRng(5), CONFIG);
@@ -123,5 +125,32 @@ describe("RoundGame", () => {
     expect(after.find((r) => r.userId === "thief")!.fish).toBe(1);
     // The richest player robs the runner-up instead of themselves.
     expect(g.steal("rich")!.victim.userId).not.toBe("rich");
+  });
+
+  it("keeps every gift tier's fish within its points range and rarity band", () => {
+    const tiers = ["gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts"];
+    const ranges: Record<string, [number, number]> = {
+      "gift-rose": [50, 600],
+      "gift-finger-heart": [250, 3_000],
+      "gift-rosa": [500, 6_000],
+      "gift-doughnut": [2_000, 25_000],
+      "gift-hand-hearts": [7_000, Infinity],
+    };
+    for (const id of tiers) {
+      const action = defaultRulesConfig.rules.find((r) => r.id === id)!.action;
+      if (action.type !== "cast") throw new Error(id);
+      const g = newGame();
+      g.start(0);
+      g.join("a", "A", 0);
+      const events = g.cast("a", 300, 10, 1, action);
+      const [lo, hi] = ranges[id]!;
+      for (const e of events) {
+        expect(e.fish.price).toBeGreaterThanOrEqual(lo);
+        expect(e.fish.price).toBeLessThanOrEqual(hi);
+        const r = RARITIES.indexOf(e.fish.rarity);
+        expect(r).toBeGreaterThanOrEqual(RARITIES.indexOf(action.minRarity ?? "common"));
+        expect(r).toBeLessThanOrEqual(RARITIES.indexOf(action.maxRarity ?? "mythic"));
+      }
+    }
   });
 });

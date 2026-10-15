@@ -138,10 +138,17 @@ export function describeAction(action: Action, times: number): string {
 }
 
 /** " · การันตีหายาก+ · อย่างน้อย 150 แต้ม/ตัว" */
-function describeGuarantee(action: { minRarity?: Rarity; minPoints?: number }): string {
+function describeGuarantee(action: { minRarity?: Rarity; maxRarity?: Rarity; minPoints?: number; maxPoints?: number }): string {
   const parts: string[] = [];
-  if (action.minRarity && action.minRarity !== "common") parts.push(`การันตี${rarityTh[action.minRarity]}ขึ้นไป`);
-  if (action.minPoints) parts.push(`อย่างน้อย ${thNumber.format(action.minPoints)} แต้ม/ตัว`);
+  const lo = action.minRarity && action.minRarity !== "common" ? rarityTh[action.minRarity] : null;
+  const hi = action.maxRarity && action.maxRarity !== "mythic" ? rarityTh[action.maxRarity] : null;
+  if (lo && hi) parts.push(lo === hi ? lo : `${lo}–${hi}`);
+  else if (lo) parts.push(`${lo}ขึ้นไป`);
+  else if (hi) parts.push(`ไม่เกิน${hi}`);
+  const n = (v: number) => thNumber.format(v);
+  if (action.minPoints && action.maxPoints) parts.push(`${n(action.minPoints)}–${n(action.maxPoints)} แต้ม`);
+  else if (action.minPoints) parts.push(`${n(action.minPoints)} แต้มขึ้นไป`);
+  else if (action.maxPoints) parts.push(`ไม่เกิน ${n(action.maxPoints)} แต้ม`);
   return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 

@@ -46,11 +46,14 @@ export interface CatchEvent {
   totalValue: number;
 }
 
-/** A guarantee on a cast (from gifts). */
+/** A guarantee on a cast (from gifts): the fish's rarity and points stay within these bounds. */
 export interface CastGuarantee {
   minRarity?: Rarity;
-  /** Each fish is worth at least this many points. */
+  maxRarity?: Rarity;
+  /** Each fish is worth at least this many points… */
   minPoints?: number;
+  /** …and at most this many. */
+  maxPoints?: number;
 }
 
 /** The thief took one fish from the victim (the #1 player, or #2 when the thief was #1). */
@@ -313,10 +316,10 @@ export class RoundGame {
 
   private castOnce(player: Player, now: number, rareBoost: number, guarantee: CastGuarantee): CatchEvent {
     const boost = rareBoost * (now < this.frenzyUntil ? this.frenzyBoost : 1);
-    const { fish, pity } = rollCatch(this.rng, { pity: player.pity, rareBoost: boost, minRarity: guarantee.minRarity });
+    const { fish, pity } = rollCatch(this.rng, { pity: player.pity, rareBoost: boost, minRarity: guarantee.minRarity, maxRarity: guarantee.maxRarity });
     player.pity = pity;
     this.pity.set(player.userId, pity);
-    const price = Math.max(fish.price, guarantee.minPoints ?? 0);
+    const price = Math.min(guarantee.maxPoints ?? Infinity, Math.max(fish.price, guarantee.minPoints ?? 0));
     const caught: CaughtFish = { ...fish, price, id: this.nextFishId++, at: now };
     player.fish.push(caught);
     const personalBest = fish.weightLog10 > player.best;

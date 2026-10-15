@@ -29,15 +29,17 @@ const shareTrigger = z.object({ type: z.literal("share") });
 export const triggerSchema = z.union([giftTrigger, likesTrigger, commentTrigger, followTrigger, shareTrigger]);
 
 /**
- * Cast `count` times. `minRarity` guarantees at least that rarity; `minPoints` guarantees each
- * fish is worth at least that many points (gifts use both, so a gift is never a dud).
+ * Cast `count` times. Gifts keep each fish within a rarity range (`minRarity`…`maxRarity`) and
+ * a points range (`minPoints`…`maxPoints`), so a gift is never a dud and never more than it's worth.
  */
 const castAction = z.object({
   type: z.literal("cast"),
   count: z.number().int().positive().default(1),
   bait: z.string().optional(),
   minRarity: z.enum(RARITIES).optional(),
+  maxRarity: z.enum(RARITIES).optional(),
   minPoints: z.number().int().nonnegative().optional(),
+  maxPoints: z.number().int().positive().optional(),
 });
 
 export const actionSchema = z.discriminatedUnion("type", [
@@ -87,15 +89,20 @@ export function parseRulesConfig(input: unknown): RulesConfig {
 
 /**
  * Bring a rules.json from an older version up to date. Before version 2 the rules had a different
- * shape, so they are replaced outright; from version 2 on, the streamer's edits are kept and only
- * default rules they don't have yet (by id) are added.
+ * shape, so they are replaced outright. From version 2 on, the streamer's edits are kept: default
+ * rules they don't have yet (by id) are added, and rules listed in `refresh` for a version passed
+ * (e.g. re-balanced gifts) are reset to the new defaults.
  */
-export function upgradeRulesConfig(config: RulesConfig, defaults: RulesConfig, version: number): RulesConfig {
+export function upgradeRulesConfig(config: RulesConfig, defaults: RulesConfig, version: number, refresh: Record<number, string[]> = {}): RulesConfig {
   const from = config.version ?? 1;
   if (from >= version) return config;
   if (from < 2) return defaults;
-  const have = new Set(config.rules.map((r) => r.id));
-  return { version, rules: [...config.rules, ...defaults.rules.filter((r) => r.id === undefined || !have.has(r.id))] };
+  const reset = new Set<string>();
+  for (const [v, ids] of Object.entries(refresh)) if (Number(v) > from && Number(v) <= version) for (const id of ids) reset.add(id);
+  const byId = new Map(defaults.rules.filter((r) => r.id !== undefined).map((r) => [r.id!, r]));
+  const kept = config.rules.map((r) => (r.id !== undefined && reset.has(r.id) && byId.has(r.id) ? byId.get(r.id)! : r));
+  const have = new Set(kept.map((r) => r.id));
+  return { version, rules: [...kept, ...defaults.rules.filter((r) => r.id === undefined || !have.has(r.id))] };
 }
 
 // ---------- Engine ----------

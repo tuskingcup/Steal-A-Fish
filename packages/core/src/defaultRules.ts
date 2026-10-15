@@ -1,19 +1,23 @@
 import type { CastAction, RulesConfig } from "./rules";
 
 /** Bump when the default rules change; rules.json files from older versions are replaced. */
-export const RULES_VERSION = 3;
+export const RULES_VERSION = 4;
+
+/** Rules reset to the new defaults when a rules.json is upgraded past a version (re-balances). */
+export const RULES_REFRESH: Record<number, string[]> = {
+  4: ["gift-rose", "gift-finger-heart", "gift-rosa", "gift-doughnut", "gift-hand-hearts", "gift-orange-heart-lucky", "follow-rosa"],
+};
 
 /**
- * Gift tiers. Every gift is a cast with a guarantee, so no gift is ever a dud: a minimum rarity
- * and a minimum number of points per fish. Bigger gifts guarantee more points per coin
- * (rose 50/coin … hand hearts 80/coin) and more casts, so more chances at a legend on top.
- * A cast still lands whatever fish it rolls; the guarantee only lifts the floor.
+ * Gift tiers: one cast per gift, its points kept within the tier's range and its rarity within a
+ * matching band, so the fish fits its points (a rose never lands a 600-point naga):
+ * Rose 50–600, Finger Heart 250–3,000, Rosa 500–6,000, Doughnut 2,000–25,000, Hand Hearts 7,000+.
  */
-const ROSE: CastAction = { type: "cast", count: 1, minRarity: "uncommon", minPoints: 50 };
-const FINGER_HEART: CastAction = { type: "cast", count: 2, minRarity: "rare", minPoints: 150 };
-const ROSA: CastAction = { type: "cast", count: 3, minRarity: "rare", minPoints: 200 };
-const DOUGHNUT: CastAction = { type: "cast", count: 3, minRarity: "epic", minPoints: 700 };
-const HAND_HEARTS: CastAction = { type: "cast", count: 5, minRarity: "epic", minPoints: 1_600 };
+const ROSE: CastAction = { type: "cast", count: 1, minRarity: "uncommon", maxRarity: "rare", minPoints: 50, maxPoints: 600 };
+const FINGER_HEART: CastAction = { type: "cast", count: 1, minRarity: "rare", maxRarity: "epic", minPoints: 250, maxPoints: 3_000 };
+const ROSA: CastAction = { type: "cast", count: 1, minRarity: "epic", maxRarity: "legendary", minPoints: 500, maxPoints: 6_000 };
+const DOUGHNUT: CastAction = { type: "cast", count: 1, minRarity: "epic", maxRarity: "legendary", minPoints: 2_000, maxPoints: 25_000 };
+const HAND_HEARTS: CastAction = { type: "cast", count: 1, minRarity: "legendary", minPoints: 7_000 };
 
 /**
  * Rules written to userData/rules.json on first launch. Gifts are matched by coin value

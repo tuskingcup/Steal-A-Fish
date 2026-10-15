@@ -46,7 +46,9 @@
     #card.show { display: block; animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
     #card .who { font-size: 15px; color: #9FE3E6; }
     #card .name { font-size: 26px; font-weight: 800; margin: 4px 0; color: var(--rc); }
-    #card .weight { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 0 #0008; }
+    /* Points are the headline; weight is a detail. */
+    #card .points, #reveal .points { font-size: 38px; font-weight: 900; color: #FFD866; text-shadow: 0 2px 0 #0009, 0 0 14px #FFC23D88; line-height: 1.15; }
+    #card .weight { font-size: 15px; font-weight: 600; color: #CFE8EE; }
     #card .best { color: #FFC23D; font-weight: 700; font-size: 14px; }
     #card .price { font-size: 18px; font-weight: 700; margin-top: 2px; }
     .coin { color: #FFD866; font-weight: 700; white-space: nowrap; }
@@ -66,8 +68,8 @@
     #summary .stats { font-size: 13px; color: #9FE3E6; text-align: center; margin: 2px 0 6px; }
     #summary .exfish { text-align: center; padding: 4px 0 2px; border-top: 1px solid #2D6E8455; }
     #summary .exname { font-size: 22px; font-weight: 800; text-shadow: 0 2px 6px #000A; }
-    #summary .exnums { display: flex; justify-content: center; gap: 14px; font-size: 15px; color: #DFF6F7; margin-top: 2px; }
-    #summary .exprice { font-size: 17px; font-weight: 700; margin-top: 2px; }
+    #summary .exnums { display: flex; justify-content: center; gap: 14px; font-size: 13px; color: #CFE8EE; margin-top: 2px; }
+    #summary .exprice { font-size: 26px; font-weight: 900; color: #FFD866; text-shadow: 0 2px 0 #0009; margin-top: 2px; }
     #summary .exprice small { color: #9FE3E6; font-size: 12px; font-weight: 400; margin-left: 10px; }
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
     body.in-summary #feed, body.in-summary #joinhint { display: none; }
@@ -83,8 +85,7 @@
     #reveal.info { animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
     #reveal .who { font-size: 16px; color: #9FE3E6; }
     #reveal .name { font-size: 26px; font-weight: 800; color: var(--rc); margin: 2px 0; }
-    #reveal .weight { font-size: 30px; font-weight: 800; text-shadow: 0 2px 0 #0008; }
-    #reveal .len { font-size: 18px; font-weight: 700; color: #FFFFFF; }
+    #reveal .len { font-size: 15px; font-weight: 600; color: #CFE8EE; }
     #reveal .price { font-size: 17px; font-weight: 700; margin-top: 2px; }
     #reveal .fact { font-size: 14px; color: #CFE0FF; margin-top: 4px; }
     #reveal.cosmic { display: block; top: 16%; animation: pop .4s cubic-bezier(.2,1.6,.4,1); }

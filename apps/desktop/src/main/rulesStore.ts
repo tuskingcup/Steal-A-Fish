@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
-import { defaultRulesConfig, parseRulesConfig, RULES_VERSION, upgradeRulesConfig, type RulesConfig } from "@saf/core";
+import { defaultRulesConfig, parseRulesConfig, RULES_REFRESH, RULES_VERSION, upgradeRulesConfig, type RulesConfig } from "@saf/core";
 
 /**
  * rules.json in userData. The settings UI and hand edits share this one file.
@@ -66,7 +66,7 @@ export class RulesStore {
       if (version < RULES_VERSION) {
         // New default rules (e.g. follow rewards): upgrade, keeping the old file next to it.
         copyFileSync(this.path, join(dirname(this.path), `rules.v${version}.backup.json`));
-        const upgraded = upgradeRulesConfig(config, defaultRulesConfig, RULES_VERSION);
+        const upgraded = upgradeRulesConfig(config, defaultRulesConfig, RULES_VERSION, RULES_REFRESH);
         writeFileSync(this.path, JSON.stringify(upgraded, null, 2) + "\n", "utf8");
         return upgraded;
       }

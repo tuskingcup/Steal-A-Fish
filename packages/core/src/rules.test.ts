@@ -145,6 +145,12 @@ describe("default rules", () => {
     expect(up.rules.some((r) => r.id === "follow-rosa")).toBe(true);
     expect(upgradeRulesConfig({ rules: [] }, defaultRulesConfig, 3)).toBe(defaultRulesConfig); // v1: replaced
   });
+
+  it("reset re-balanced gift rules when upgrading past their version", () => {
+    const v3 = { version: 3, rules: defaultRulesConfig.rules.map((r) => (r.id === "gift-rose" ? { ...r, action: { type: "cast" as const, count: 1, minPoints: 50 } } : r)) };
+    const up = upgradeRulesConfig(v3, defaultRulesConfig, 4, { 4: ["gift-rose"] });
+    expect(up.rules.find((r) => r.id === "gift-rose")!.action).toEqual(defaultRulesConfig.rules.find((r) => r.id === "gift-rose")!.action);
+  });
 });
 
 describe("pickLucky", () => {

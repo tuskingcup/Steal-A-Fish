@@ -1,4 +1,4 @@
-import { isHuge, RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary, type RulesConfig } from "@saf/core";
+import { RARITIES, type CatchEvent, type Rarity, type RoundState, type RoundSummary, type RulesConfig } from "@saf/core";
 import { fishLengthMeters } from "./reveal";
 import { finishFor, isDense } from "./fishModels";
 import { createPondScene } from "./scene";
@@ -112,10 +112,9 @@ function queueCard(e: CatchEvent): void {
     urgent: rarityRank(e.fish.rarity) >= rarityRank("epic"),
     html:
       `<div class="who"><b>@${esc(e.name)}</b> ${esc(th.caught)}</div>` +
-      `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))}</div>` +
-      `<div><span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
+      `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
+      `<div class="points">${esc(formatPoints(e.fish.price))}</div>` +
       `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
-      `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
       (e.personalBest ? `<div class="best">${esc(th.newBest)}</div>` : ""),
   });
 }
@@ -140,15 +139,17 @@ function showNextCard(): void {
   setTimeout(showNextCard, CARD_MS);
 }
 
+/** A catch worth this many points gets the full catch scene. */
+const BIG_CATCH_POINTS = 10_000;
+
 /**
- * With a big crowd catching every few seconds, only big catches make the feed and the card: Epic
- * and up, giant size classes and up, and diamond-or-rarer mutations. Every catch still pops its
- * points over the catcher's head.
+ * With a big crowd catching every few seconds, only big catches show at all — worth 10,000+
+ * points, or a neutron-star / black-hole fish (their cosmic scene). They get the full catch scene,
+ * a feed line and points popping over the catcher's head; everything else only adds to the
+ * player's total on their name tag.
  */
 function isBigCatch(e: CatchEvent): boolean {
-  const bigClass = e.fish.sizeClass !== "normal" && e.fish.sizeClass !== "big";
-  const bigMutation = e.fish.mutations.some((m) => m !== "gold");
-  return rarityRank(e.fish.rarity) >= rarityRank("epic") || bigClass || bigMutation;
+  return e.fish.price >= BIG_CATCH_POINTS || isDense(e.fish.mutations);
 }
 
 window.saf.onCatch((e) => {
@@ -169,16 +170,15 @@ window.saf.onCatch((e) => {
 // ---------- Big-catch reveal queue ----------
 
 /**
- * Legendary and Mythic catches, titan/colossal size classes, density mutations (the dock-breaking
- * joke), and Epic catches that are the player's new best get the full reveal. With a big crowd these can pile up, so at most
- * two wait; the rest fall back to a card. Mythic and the dense joke jump the queue.
+ * Big catches (10,000+ points, or a density mutation) get the full reveal. With a big crowd these
+ * can pile up, so at most two wait; the rest fall back to a card. Mythic, the cosmic density
+ * scenes and colossal fish jump the queue.
  */
 const revealQueue: CatchEvent[] = [];
 const MAX_REVEALS_WAITING = 2;
 
 function wantsReveal(e: CatchEvent): boolean {
-  const r = rarityRank(e.fish.rarity);
-  return r >= rarityRank("legendary") || isDense(e.fish.mutations) || isHuge(e.fish.sizeClass) || (r === rarityRank("epic") && e.personalBest);
+  return isBigCatch(e);
 }
 
 function queueReveal(e: CatchEvent): boolean {
@@ -244,9 +244,8 @@ function renderReveal(): void {
   revealEl.innerHTML =
     `<div class="who"><b>@${esc(e.name)}</b> ${esc(dense ? th.denseCatch : th.bigCatch)}</div>` +
     `<div class="name">${esc(fishName(e.fish.speciesId, e.fish.mutations, e.fish.sizeClass))} <span class="chip">${esc(rarityTh[e.fish.rarity])}</span></div>` +
-    `<div class="weight">${esc(formatWeight(e.fish.weightLog10))}</div>` +
-    `<div class="len">${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
-    `<div class="price">${esc(th.sellPrice)} ${esc(formatPoints(e.fish.price))}</div>` +
+    `<div class="points">${esc(formatPoints(e.fish.price))}</div>` +
+    `<div class="len">${esc(formatWeight(e.fish.weightLog10))} · ${esc(th.lengthAbout(formatLength(fishLengthMeters(e.fish.weightLog10, e.fish.mutations))))}</div>` +
     (dense && th.denseFact[finish] ? `<div class="fact">${esc(th.denseFact[finish]!)}</div>` : "");
 }
 setInterval(renderReveal, 100);
@@ -376,10 +375,9 @@ function renderSummary(): void {
     const detail = f
       ? `<div class="exfish r-${f.rarity}">` +
         `<div class="exname">${esc(fishName(f.speciesId, f.mutations, f.sizeClass))} <span class="chip">${esc(rarityTh[f.rarity])}</span></div>` +
+        `<div class="exprice">${esc(formatPoints(f.price))}<small>${esc(th.fishOf(fishIdx + 1, p.fish.length))}</small></div>` +
         `<div class="exnums"><span>${esc(formatWeight(f.weightLog10))}</span>` +
         `<span>${esc(th.lengthAbout(formatLength(fishLengthMeters(f.weightLog10, f.mutations))))}</span></div>` +
-        `<div class="exprice">${esc(th.sellPrice)} <span class="coin">${esc(formatPoints(f.price))}</span>` +
-        `<small>${esc(th.fishOf(fishIdx + 1, p.fish.length))}</small></div>` +
         `</div>`
       : `<div class="stats">${esc(th.noFish)}</div>`;
     browser =

@@ -129,6 +129,8 @@ export interface CastOptions {
   rareBoost?: number;
   /** Guarantee at least this rarity (gifts). */
   minRarity?: Rarity;
+  /** And at most this rarity (gifts with a points range). */
+  maxRarity?: Rarity;
 }
 
 export interface CastResult {
@@ -141,9 +143,14 @@ export function rollCatch(rng: Rng, opts: CastOptions): CastResult {
   const forceRare = opts.pity + 1 >= PITY_CASTS;
   const boost = opts.rareBoost ?? 1;
   const floor = RARITIES.indexOf(opts.minRarity ?? "common");
+  const ceiling = RARITIES.indexOf(opts.maxRarity ?? "mythic");
+  const inRange = RARITIES.filter((_, i) => i >= floor && i <= ceiling);
+  // Pity lifts the roll to Rare+ when the range allows it.
+  const pityPool = inRange.filter(isRarePlus);
+  const pool = forceRare && pityPool.length > 0 ? pityPool : inRange.length > 0 ? inRange : [...RARITIES];
   const rarity = pickWeighted(
     rng,
-    RARITIES.filter((r, i) => (!forceRare || isRarePlus(r)) && i >= floor).map((r) => [r, RARITY_WEIGHTS[r] * (isRarePlus(r) ? boost : 1)] as const),
+    pool.map((r) => [r, RARITY_WEIGHTS[r] * (isRarePlus(r) ? boost : 1)] as const),
   );
   const species = pickWeighted(
     rng,
