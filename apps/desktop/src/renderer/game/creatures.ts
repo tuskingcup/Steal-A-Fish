@@ -301,8 +301,8 @@ function blueWhale(scene: Scene): CreatureTemplate {
   // The belly line: high on the face, sweeping down towards the tail stock.
   const bellyLine = (x: number) => -0.05 + ((x + 0.3) / 0.8) * 0.17;
   /** Where blue meets the pale belly: the belly line, then curving up along the tail stock. */
-  const STOCK_END = new Vector3(-0.74, lift(-0.4) + 0.07, 0);
-  const boundary = (x: number) => (x >= -0.3 ? bellyLine(x) : bellyLine(-0.3) + Math.min(1, (-0.3 - x) / 0.44) * (STOCK_END.y - 0.012 - bellyLine(-0.3)));
+  const STOCK_END = new Vector3(-0.6, lift(-0.4) + 0.05, 0);
+  const boundary = (x: number) => (x >= -0.3 ? bellyLine(x) : bellyLine(-0.3) + Math.min(1, (-0.3 - x) / 0.3) * (STOCK_END.y - 0.012 - bellyLine(-0.3)));
   const body = ell(
     scene,
     R,
@@ -360,23 +360,23 @@ function blueWhale(scene: Scene): CreatureTemplate {
       parts.push(fin);
     }
   }
-  // A long tail stock tapering out of the round body and rising a little (blue above, pale below),
-  // so the whale is long as well as plump.
+  // A short, stubby tail stock tapering out of the round body and rising a little (blue above,
+  // pale below): cute rather than long.
   // It starts inside the body (where the body is still wider) and meets its surface around
   // x ≈ −0.4, so there is no seam.
   const stockFrom = new Vector3(-0.25, lift(-0.25), 0);
   const stockTo = STOCK_END;
-  const stockPath = curve([stockFrom, new Vector3(-0.45, lift(-0.4) + 0.01, 0), new Vector3(-0.6, lift(-0.4) + 0.035, 0), stockTo], 6);
-  const stockR = (i: number) => 0.15 - 0.12 * Math.pow(i / (stockPath.length - 1), 0.8);
+  const stockPath = curve([stockFrom, new Vector3(-0.42, lift(-0.4) + 0.01, 0), new Vector3(-0.52, lift(-0.4) + 0.028, 0), stockTo], 6);
+  const stockR = (i: number) => 0.15 - 0.1 * Math.pow(i / (stockPath.length - 1), 0.8);
   const stock = CreateTube("whaleStock", { path: stockPath, radiusFunction: stockR, tessellation: 14, cap: Mesh.CAP_ALL }, scene);
   stock.convertToFlatShadedMesh();
   paintFaces(stock, (x, y) => (y < boundary(x) ? belly : blue));
   parts.push(stock);
-  const tailParts = [ell(scene, [0.05, 0.03, 0.035], new Vector3(0.03, 0, 0), "#3577B6"), flukes(scene, 0.26, 0.2, 0.03, "#3577B6")];
+  const tailParts = [ell(scene, [0.05, 0.03, 0.035], new Vector3(0.03, 0, 0), "#3577B6"), flukes(scene, 0.22, 0.15, 0.04, "#3577B6")];
   const moving: MovingPart[] = [{ mesh: merge("whaleFlukes", tailParts), pivot: stockTo.clone(), axis: "z", amp: 0.22, speed: 1.2 }];
-  // Built long (about 1.27 units); scale it back to the usual ~1 unit, centred, so true-scale
-  // comparisons on the reveal stage stay right.
-  const S = 0.82;
+  // Built a little long (about 1.27 units with the flukes); scale it back to the usual ~1 unit,
+  // centred, so true-scale comparisons on the reveal stage stay right.
+  const S = 0.8;
   const shift = new Vector3(0.11, 0, 0);
   const fit = (m: Mesh) => {
     m.scaling.setAll(S);
