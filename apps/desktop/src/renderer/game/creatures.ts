@@ -11,7 +11,7 @@ import { finMesh, hexRgb, mix, paintFaces, sideFin, smooth, tailTris, type Rgb }
 
 /**
  * The big ones, each built from its own parts rather than the fish parameter table: shark,
- * megalodon (open jaws full of teeth), orca and blue whale (horizontal flukes), the Bloop (a pale
+ * megalodon (a mouth cut into the head, a hinged open jaw, teeth set into both rims), orca and blue whale (horizontal flukes), the Bloop (a pale
  * deep-sea giant whose head is one enormous gaping mouth lined with teeth), El Gran Maja (a dark-blue whale-shaped titan with a huge black mouth, jagged teeth and
  * a row of glowing cyan eyes), Nessie (a cheerful orange plesiosaur), Godzilla (an upright kaiju with glowing back plates) and the Sea
  * Eater (a worm-like body that is all mouth, rings of needle teeth, on four long spindly legs) and
@@ -241,6 +241,130 @@ function sharkLike(scene: Scene, id: string, mega: boolean): CreatureTemplate {
   const b = Math.max(0.012, s.top(-0.42) * 0.8);
   moving.push({ mesh: hide(finMesh(scene, `${id}Tail`, tailTris("shark", ry * 2, b), 0, fin)), pivot: new Vector3(-0.44, 0, 0), axis: "y", amp: 0.4, speed: 2.5 });
   return { body: merge(id, parts), moving };
+}
+
+// ---------- Megalodon ----------
+
+function megalodon(scene: Scene): CreatureTemplate {
+  // A massive, thick-set prehistoric shark: slate above and white below with a ragged line
+  // between, gill slits, a tall swept dorsal and a huge crescent tail. Its mouth is part of the
+  // head: the underside of the snout is cut away into a dark palate, ringed with rows of big
+  // triangular teeth set into it, and a hinged lower jaw (pink floor, white chin, its own teeth
+  // set into its rim) hangs wide open beneath — nothing floats.
+  const top = hexRgb("#46525D");
+  const topDark = hexRgb("#36414B");
+  const under = hexRgb("#E6E6E0");
+  const gill = hexRgb("#232A31");
+  const palate = hexRgb("#5E1620");
+  const throat = hexRgb("#1A0306");
+  const toothWhite = "#F4F0E4";
+  const R: [number, number, number] = [0.5, 0.155, 0.145];
+  const taper = (x: number) => (x < 0 ? 1 - Math.pow(-x / R[0], 1.5) * 0.85 : 1 - Math.pow(x / R[0], 2) * 0.35);
+  const snoutLift = (x: number) => Math.max(0, x - 0.3) * 0.12;
+  const HINGE = 0.1;
+  /** Height of the mouth roof (the cut underside of the head), rising towards the snout. */
+  const roof = (x: number) => -0.07 + ((x - HINGE) / (R[0] - HINGE)) * 0.075;
+  const halfWidth = (x: number, y: number) => {
+    const Y = (y - snoutLift(x)) / taper(x);
+    const q = 1 - (x / R[0]) ** 2 - (Y / R[1]) ** 2;
+    return q <= 0 ? 0 : R[2] * Math.sqrt(q) * taper(x);
+  };
+  const body = ell(
+    scene,
+    R,
+    Vector3.Zero(),
+    (x, y, z) => {
+      if (x > HINGE + 0.01 && y < roof(x) + 0.004) return x < HINGE + 0.06 ? throat : palate;
+      const line = -0.02 + 0.03 * x + 0.006 * Math.sin(x * 22);
+      if (x > -0.02 && x < 0.1 && Math.abs(y) < 0.06 && Math.abs(z) > 0.06 && (x * 52) % 1 < 0.22) return gill;
+      if (y < line) return under;
+      return y > 0.09 ? topDark : top;
+    },
+    {
+      seg: 30,
+      deform: (p) => {
+        const t = taper(p.x);
+        p.y = p.y * t + snoutLift(p.x);
+        p.z *= t;
+        if (p.x > HINGE && p.y < roof(p.x)) p.y = roof(p.x); // the mouth roof
+      },
+    },
+  );
+  const parts: Mesh[] = [body];
+  // Upper teeth: two rows of big triangular teeth set into the roof, just inside its rim; the
+  // front ones are the biggest.
+  for (const [row, inset, scale] of [[0, 0.9, 1], [1, 0.72, 0.65]] as const) {
+    for (let x = HINGE + 0.07 + row * 0.014, k = 0; x < R[0] - 0.035; x += 0.027, k++) {
+      const y = roof(x);
+      const w = halfWidth(x, y + 0.002);
+      if (w < 0.02) continue;
+      const len = (0.038 + 0.022 * ((x - HINGE) / (R[0] - HINGE)) + hash01(k * 7 + row) * 0.008) * scale;
+      for (const sd of [-1, 1]) {
+        const base = new Vector3(x, y + 0.008, sd * w * inset);
+        parts.push(cone(scene, base, base.add(new Vector3(0.006, -len - 0.008, -sd * 0.006)), 0.012 * scale, toothWhite, 3));
+      }
+    }
+  }
+  // The dark throat at the back of the gape closes the hinge.
+  parts.push(ell(scene, [0.035, 0.05, 0.085], new Vector3(HINGE + 0.02, -0.085, 0), throat));
+  for (const sd of [-1, 1]) {
+    const ey = 0.04;
+    parts.push(ell(scene, [0.013, 0.012, 0.008], new Vector3(0.36, ey, sd * (halfWidth(0.36, ey) - 0.004)), "#060708"));
+  }
+  // Fins: a tall swept dorsal, small second dorsal and anal, big pectorals.
+  const topAt = (x: number) => R[1] * Math.sqrt(Math.max(0, 1 - (x / R[0]) ** 2)) * taper(x) + snoutLift(x);
+  const finCol = "#3B4651";
+  parts.push(flatFin(scene, [[[-0.1, topAt(-0.1) - 0.03], [0.13, topAt(0.13) - 0.03], [-0.13, topAt(0) + 0.24]], [[0.13, topAt(0.13) - 0.03], [0.02, topAt(0) + 0.12], [-0.13, topAt(0) + 0.24]]], finCol));
+  parts.push(flatFin(scene, [[[-0.34, topAt(-0.34) - 0.015], [-0.28, topAt(-0.28) - 0.015], [-0.35, topAt(-0.31) + 0.05]]], finCol));
+  parts.push(flatFin(scene, [[[-0.31, -topAt(-0.31) + 0.015], [-0.25, -topAt(-0.25) + 0.015], [-0.32, -topAt(-0.28) - 0.045]]], finCol));
+  for (const sd of [-1, 1]) {
+    const y = -0.07;
+    parts.push(sideFin(scene, "pec", new Vector3(0.04, y, sd * (halfWidth(0.04, y) - 0.012)), sd, 1.0, 0.32, finCol));
+  }
+  // The lower jaw, hinged at the corner of the mouth and hanging open: a trough whose top is the
+  // pink floor of the mouth, white underneath, with its teeth set into the rim.
+  const jawLen = R[0] - HINGE - 0.07;
+  const jawW = (lx: number) => 0.112 * (1 - Math.pow(Math.max(0, lx - 0.05) / jawLen, 1.8) * 0.72);
+  const jawParts: Mesh[] = [
+    // Built centred (deform runs in its own space, then it is moved to start at the hinge).
+    ell(scene, [jawLen / 2, 0.05, 1], new Vector3(jawLen / 2, -0.03, 0), (_x, y) => (y > -0.011 ? hexRgb("#7A2230") : y > -0.042 ? top : under), {
+      seg: 20,
+      deform: (p) => {
+        p.z *= jawW(p.x + jawLen / 2);
+        p.y = Math.min(p.y, 0.025); // a flat floor at y = -0.005 once placed
+      },
+    }),
+  ];
+  for (let lx = 0.05, k = 0; lx < jawLen - 0.015; lx += 0.026, k++) {
+    const w = jawW(lx) * 0.82;
+    const len = 0.03 + 0.014 * (lx / jawLen) + hash01(k * 5 + 3) * 0.008;
+    for (const sd of [-1, 1]) {
+      const base = new Vector3(lx, -0.014, sd * w);
+      jawParts.push(cone(scene, base, base.add(new Vector3(-0.004, len + 0.009, -sd * 0.005)), 0.011, toothWhite, 3));
+    }
+  }
+  const jaw = merge("megalodonJaw", jawParts);
+  jaw.rotation.z = -0.4; // hanging open
+  jaw.bakeCurrentTransformIntoVertices();
+  // A huge crescent tail.
+  const tail = flatFin(
+    scene,
+    [
+      [[0.06, 0.03], [0, 0.03], [0, -0.03]],
+      [[0.06, 0.03], [0, -0.03], [0.06, -0.03]],
+      [[0, 0.03], [-0.2, 0.34], [-0.08, 0.02]],
+      [[0, 0.03], [-0.08, 0.02], [0, -0.03]],
+      [[0, -0.03], [-0.08, 0.02], [-0.17, -0.27]],
+    ],
+    finCol,
+  );
+  return {
+    body: merge("megalodon", parts),
+    moving: [
+      { mesh: hide(jaw), pivot: new Vector3(HINGE, roof(HINGE) - 0.005, 0), axis: "z", amp: 0.07, speed: 0.7 },
+      { mesh: hide(tail), pivot: new Vector3(-0.45, 0.01, 0), axis: "y", amp: 0.35, speed: 2.2 },
+    ],
+  };
 }
 
 // ---------- Whales ----------
@@ -935,7 +1059,7 @@ function gyarados(scene: Scene): CreatureTemplate {
 
 export const CREATURES: Record<string, (scene: Scene) => CreatureTemplate> = {
   shark: (scene) => sharkLike(scene, "shark", false),
-  megalodon: (scene) => sharkLike(scene, "megalodon", true),
+  megalodon,
   orca,
   whale: blueWhale,
   nessie,
