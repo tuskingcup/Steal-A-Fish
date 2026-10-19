@@ -261,9 +261,9 @@ function megalodon(scene: Scene): CreatureTemplate {
   const R: [number, number, number] = [0.5, 0.155, 0.145];
   const taper = (x: number) => (x < 0 ? 1 - Math.pow(-x / R[0], 1.5) * 0.85 : 1 - Math.pow(x / R[0], 2) * 0.35);
   const snoutLift = (x: number) => Math.max(0, x - 0.3) * 0.12;
-  const HINGE = 0.1;
+  const HINGE = 0.17;
   /** Height of the mouth roof (the cut underside of the head), rising towards the snout. */
-  const roof = (x: number) => -0.07 + ((x - HINGE) / (R[0] - HINGE)) * 0.075;
+  const roof = (x: number) => -0.088 + ((x - HINGE) / (0.45 - HINGE)) * 0.058;
   const halfWidth = (x: number, y: number) => {
     const Y = (y - snoutLift(x)) / taper(x);
     const q = 1 - (x / R[0]) ** 2 - (Y / R[1]) ** 2;
@@ -291,22 +291,20 @@ function megalodon(scene: Scene): CreatureTemplate {
     },
   );
   const parts: Mesh[] = [body];
-  // Upper teeth: two rows of big triangular teeth set into the roof, just inside its rim; the
-  // front ones are the biggest.
-  for (const [row, inset, scale] of [[0, 0.9, 1], [1, 0.72, 0.65]] as const) {
-    for (let x = HINGE + 0.07 + row * 0.014, k = 0; x < R[0] - 0.035; x += 0.027, k++) {
-      const y = roof(x);
-      const w = halfWidth(x, y + 0.002);
-      if (w < 0.02) continue;
-      const len = (0.038 + 0.022 * ((x - HINGE) / (R[0] - HINGE)) + hash01(k * 7 + row) * 0.008) * scale;
-      for (const sd of [-1, 1]) {
-        const base = new Vector3(x, y + 0.008, sd * w * inset);
-        parts.push(cone(scene, base, base.add(new Vector3(0.006, -len - 0.008, -sd * 0.006)), 0.012 * scale, toothWhite, 3));
-      }
+  // Upper teeth: one neat row of straight triangular teeth set into the rim of the roof, evenly
+  // spaced and growing a little towards the front.
+  for (let x = HINGE + 0.035; x < 0.465; x += 0.024) {
+    const y = roof(x);
+    const w = halfWidth(x, y + 0.002);
+    if (w < 0.02) continue;
+    const len = 0.02 + 0.012 * ((x - HINGE) / (0.465 - HINGE));
+    for (const sd of [-1, 1]) {
+      const base = new Vector3(x, y + 0.007, sd * w * 0.88);
+      parts.push(cone(scene, base, base.add(new Vector3(0, -len - 0.007, 0)), 0.0085, toothWhite, 3));
     }
   }
   // The dark throat at the back of the gape closes the hinge.
-  parts.push(ell(scene, [0.035, 0.05, 0.085], new Vector3(HINGE + 0.02, -0.085, 0), throat));
+  parts.push(ell(scene, [0.03, 0.035, 0.075], new Vector3(HINGE + 0.015, -0.095, 0), throat));
   for (const sd of [-1, 1]) {
     const ey = 0.04;
     parts.push(ell(scene, [0.013, 0.012, 0.008], new Vector3(0.36, ey, sd * (halfWidth(0.36, ey) - 0.004)), "#060708"));
@@ -323,28 +321,32 @@ function megalodon(scene: Scene): CreatureTemplate {
   }
   // The lower jaw, hinged at the corner of the mouth and hanging open: a trough whose top is the
   // pink floor of the mouth, white underneath, with its teeth set into the rim.
-  const jawLen = R[0] - HINGE - 0.07;
-  const jawW = (lx: number) => 0.112 * (1 - Math.pow(Math.max(0, lx - 0.05) / jawLen, 1.8) * 0.72);
+  const jawLen = 0.45 - HINGE;
+  /** The jaw is as wide as the head where it hinges, narrowing to the chin. */
+  const jawW = (lx: number) => 0.122 * (1 - Math.pow(Math.max(0, lx - 0.02) / jawLen, 1.8) * 0.72);
+  // It reaches a little behind the hinge (BACK) into the body, so there is no gap at the corner.
+  const BACK = 0.05;
+  const jawMid = (jawLen - BACK) / 2;
   const jawParts: Mesh[] = [
-    // Built centred (deform runs in its own space, then it is moved to start at the hinge).
-    ell(scene, [jawLen / 2, 0.05, 1], new Vector3(jawLen / 2, -0.03, 0), (_x, y) => (y > -0.011 ? hexRgb("#7A2230") : y > -0.042 ? top : under), {
-      seg: 20,
+    // Built centred (deform runs in its own space, then it is moved into place).
+    ell(scene, [(jawLen + BACK) / 2, 0.06, 1], new Vector3(jawMid, -0.035, 0), (_x, y) => (y > -0.011 ? hexRgb("#7A2230") : y > -0.024 ? top : under) /* white chin like the belly, a grey lip */, {
+      seg: 22,
       deform: (p) => {
-        p.z *= jawW(p.x + jawLen / 2);
-        p.y = Math.min(p.y, 0.025); // a flat floor at y = -0.005 once placed
+        p.z *= jawW(p.x + jawMid);
+        p.y = Math.min(p.y, 0.03); // a flat floor at y = -0.005 once placed
       },
     }),
   ];
-  for (let lx = 0.05, k = 0; lx < jawLen - 0.015; lx += 0.026, k++) {
+  for (let lx = 0.035; lx < jawLen - 0.015; lx += 0.024) {
     const w = jawW(lx) * 0.82;
-    const len = 0.03 + 0.014 * (lx / jawLen) + hash01(k * 5 + 3) * 0.008;
+    const len = 0.016 + 0.008 * (lx / jawLen);
     for (const sd of [-1, 1]) {
-      const base = new Vector3(lx, -0.014, sd * w);
-      jawParts.push(cone(scene, base, base.add(new Vector3(-0.004, len + 0.009, -sd * 0.005)), 0.011, toothWhite, 3));
+      const base = new Vector3(lx, -0.013, sd * w);
+      jawParts.push(cone(scene, base, base.add(new Vector3(0, len + 0.008, 0)), 0.0075, toothWhite, 3));
     }
   }
   const jaw = merge("megalodonJaw", jawParts);
-  jaw.rotation.z = -0.4; // hanging open
+  jaw.rotation.z = -0.16; // a little open, showing the teeth
   jaw.bakeCurrentTransformIntoVertices();
   // A huge crescent tail.
   const tail = flatFin(
@@ -361,7 +363,7 @@ function megalodon(scene: Scene): CreatureTemplate {
   return {
     body: merge("megalodon", parts),
     moving: [
-      { mesh: hide(jaw), pivot: new Vector3(HINGE, roof(HINGE) - 0.005, 0), axis: "z", amp: 0.07, speed: 0.7 },
+      { mesh: hide(jaw), pivot: new Vector3(HINGE, roof(HINGE) - 0.005, 0), axis: "z", amp: 0.05, speed: 0.7 },
       { mesh: hide(tail), pivot: new Vector3(-0.45, 0.01, 0), axis: "y", amp: 0.35, speed: 2.2 },
     ],
   };
