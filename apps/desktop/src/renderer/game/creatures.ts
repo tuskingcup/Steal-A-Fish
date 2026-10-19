@@ -711,8 +711,8 @@ function godzilla(scene: Scene): CreatureTemplate {
   // set into its rim; the lower jaw (below) is hinged at the corner and hangs open in a roar.
   const C = new Vector3(0.235, 0.283, 0);
   const HR: [number, number, number] = [0.1, 0.05, 0.055];
-  const HINGE_L = -0.045;
-  const roofL = (lx: number) => -0.022 + ((lx - HINGE_L) / 0.145) * 0.014;
+  const HINGE_L = -0.01;
+  const roofL = (lx: number) => -0.03 + ((lx - HINGE_L) / 0.11) * 0.012;
   const snoutZ = (lx: number) => (lx > 0 ? 1 - (lx / HR[0]) ** 2 * 0.35 : 1);
   const headHalfWidth = (lx: number, ly: number) => HR[2] * Math.sqrt(Math.max(0, 1 - (lx / HR[0]) ** 2 - (ly / HR[1]) ** 2)) * snoutZ(lx);
   parts.push(
@@ -728,39 +728,39 @@ function godzilla(scene: Scene): CreatureTemplate {
       },
     }),
   );
-  for (let lx = HINGE_L + 0.016; lx < 0.088; lx += 0.0155) {
+  for (let lx = HINGE_L + 0.012; lx < 0.088; lx += 0.013) {
     const ly = roofL(lx);
     const w = headHalfWidth(lx, ly) * 0.85;
     if (w < 0.006) continue;
-    const len = 0.012 + 0.006 * ((lx - HINGE_L) / 0.13);
+    const len = 0.008 + 0.004 * ((lx - HINGE_L) / 0.098);
     for (const side of [-1, 1]) {
       const base = new Vector3(C.x + lx, C.y + ly + 0.004, side * w);
-      parts.push(cone(scene, base, base.add(new Vector3(0, -len - 0.004, 0)), 0.0042, "#ECE6D6", 3));
+      parts.push(cone(scene, base, base.add(new Vector3(0, -len - 0.004, 0)), 0.0034, "#ECE6D6", 3));
     }
   }
   // Godzilla's lower jaw: a trough with a red floor and tongue, its own teeth set into the rim.
-  const jawLen = 0.13;
-  const jawW = (lx: number) => 0.05 * (1 - Math.pow(Math.max(0, lx - 0.02) / jawLen, 1.8) * 0.6);
+  const jawLen = 0.095;
+  const jawW = (lx: number) => 0.044 * (1 - Math.pow(Math.max(0, lx - 0.015) / jawLen, 1.8) * 0.6);
   const jawMid = jawLen / 2;
   const jawParts: Mesh[] = [
-    ell(scene, [jawLen / 2 + 0.01, 0.02, 1], new Vector3(jawMid, -0.012, 0), (x, y, z) => (y > -0.007 ? hexRgb("#7A2230") : paint(x, y + 0.25, z)), {
+    ell(scene, [jawLen / 2 + 0.01, 0.016, 1], new Vector3(jawMid, -0.009, 0), (x, y, z) => (y > -0.007 ? hexRgb("#7A2230") : paint(x, y + 0.25, z)), {
       seg: 16,
       deform: (p) => {
         p.z *= jawW(p.x + jawMid);
-        p.y = Math.min(p.y, 0.008); // a flat floor at y = -0.004 once placed
+        p.y = Math.min(p.y, 0.005); // a flat floor at y = -0.004 once placed
       },
     }),
-    ell(scene, [0.04, 0.006, 0.02], new Vector3(0.05, -0.003, 0), "#B3474F"),
+    ell(scene, [0.03, 0.005, 0.016], new Vector3(0.038, -0.003, 0), "#B3474F"),
   ];
-  for (let lx = 0.014; lx < jawLen - 0.006; lx += 0.0155) {
+  for (let lx = 0.012; lx < jawLen - 0.006; lx += 0.013) {
     const w = jawW(lx) * 0.78;
     for (const side of [-1, 1]) {
       const base = new Vector3(lx, -0.007, side * w);
-      jawParts.push(cone(scene, base, base.add(new Vector3(0, 0.014, 0)), 0.0038, "#ECE6D6", 3));
+      jawParts.push(cone(scene, base, base.add(new Vector3(0, 0.011, 0)), 0.0032, "#ECE6D6", 3));
     }
   }
   const jaw = merge("godzillaJaw", jawParts);
-  jaw.rotation.z = -0.34; // roaring
+  jaw.rotation.z = -0.2; // open in a growl
   jaw.bakeCurrentTransformIntoVertices();
   const jawPivot = new Vector3(C.x + HINGE_L, C.y + roofL(HINGE_L) - 0.002, 0);
   for (const side of [-1, 1]) {
@@ -808,7 +808,7 @@ function godzilla(scene: Scene): CreatureTemplate {
     glowColor: "#7FD0FF",
     moving: [
       { mesh: hide(tail), pivot: new Vector3(-0.08, -0.12, 0), axis: "y", amp: 0.25, speed: 1.1, glow: hide(merge("godzillaTailPlates", tailGlow)) },
-      { mesh: hide(jaw), pivot: jawPivot, axis: "z", amp: 0.06, speed: 0.6 },
+      { mesh: hide(jaw), pivot: jawPivot, axis: "z", amp: 0.05, speed: 0.6 },
     ],
   };
 }
