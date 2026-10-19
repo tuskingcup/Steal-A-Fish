@@ -13,6 +13,7 @@ const summaryEl = document.getElementById("summary") as HTMLDivElement;
 const revealEl = document.getElementById("reveal") as HTMLDivElement;
 const revealLabels = document.getElementById("revealLabels") as HTMLDivElement;
 const flashEl = document.getElementById("flash") as HTMLDivElement;
+const titleEl = document.getElementById("title") as HTMLDivElement;
 
 const pond = createPondScene(canvas, { userId: "host", name: th.hostName });
 const { scene, camera, crew } = pond;
@@ -32,6 +33,30 @@ function push(html: string): void {
   while (feed.children.length > MAX_ITEMS) feed.firstElementChild?.remove();
 }
 
+// ---------- Title screen ----------
+
+// The game window opens on the title over the live bay; START opens round 1.
+const nameWords = th.gameName.split(" ");
+const nameTail = nameWords.pop() ?? "";
+titleEl.innerHTML =
+  `<div class="logo"><div class="hook">🎣</div><div class="name">${esc(nameWords.join(" "))}<br><span class="tok">${esc(nameTail)}</span></div><div class="wave"></div></div>` +
+  `<button class="startbtn" type="button">${esc(th.start)}</button>` +
+  `<div class="credit">${esc(th.credit)}</div>`;
+titleEl.querySelector(".startbtn")!.addEventListener("click", () => startNextRound());
+
+function hideTitle(): void {
+  document.body.classList.remove("on-title");
+}
+
+/** START on the title or in the summary: the main process opens the next round. */
+let starting = false;
+function startNextRound(): void {
+  if (starting) return;
+  starting = true;
+  hideTitle();
+  void window.saf.startRound().finally(() => (starting = false));
+}
+
 // ---------- Round bar ----------
 
 let round: RoundState = { phase: "idle", round: 0, endsAt: null, players: 0 };
@@ -39,7 +64,7 @@ let round: RoundState = { phase: "idle", round: 0, endsAt: null, players: 0 };
 function renderRoundBar(): void {
   const left = round.endsAt === null ? 0 : round.endsAt - Date.now();
   const clock =
-    round.phase === "open" ? th.timeLeft(formatClock(left)) : round.phase === "summary" ? th.nextRoundIn(formatClock(left)) : th.phase.idle;
+    round.phase === "open" ? th.timeLeft(formatClock(left)) : th.phase[round.phase]; // the summary waits for START: no countdown
   const low = round.phase === "open" && left < 30_000 ? " low" : "";
   roundbar.innerHTML =
     `<span class="pill clock${low}">${esc(clock)}</span>` +
@@ -49,6 +74,7 @@ setInterval(renderRoundBar, 250);
 renderRoundBar();
 
 window.saf.onRound((state) => {
+  if (state.phase !== "idle") hideTitle(); // e.g. the window reloaded mid-game
   const newRound = state.phase === "open" && state.round !== round.round;
   round = state;
   if (newRound) {
@@ -379,8 +405,14 @@ function renderSummary(): void {
 
   summaryEl.innerHTML =
     `<div class="panel podium"><h2>${esc(th.summaryTitle(summary.round))}</h2>${podium || esc(th.noPlayers)}</div>` +
-    `<div class="panel browser">${browser}</div>`;
+    `<div class="panel browser">${browser}</div>` +
+    `<button class="nextbtn" type="button">${esc(th.nextRound)}</button><div class="nextkey">${esc(th.nextRoundKey)}</div>`;
 }
+
+// The summary stays up until the streamer starts the next round (no countdown).
+summaryEl.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest(".nextbtn")) startNextRound();
+});
 
 // When nobody is pressing keys (the streamer is busy talking), show each player's best fish in turn.
 setInterval(() => {
@@ -404,12 +436,16 @@ setInterval(() => {
 
 // ---------- Keys ----------
 
+// Title or summary: Enter starts the (next) round.
 // During the summary: ←/→ steps through a player's fish, ↑/↓ changes player.
 // Otherwise ←/→ (or A/D) visits each fisher. Esc: overview.
 window.addEventListener("keydown", (e) => {
   const step = e.key === "ArrowRight" || e.key === "d" || e.key === "D" ? 1 : e.key === "ArrowLeft" || e.key === "a" || e.key === "A" ? -1 : 0;
   const vstep = e.key === "ArrowDown" || e.key === "s" || e.key === "S" ? 1 : e.key === "ArrowUp" || e.key === "w" || e.key === "W" ? -1 : 0;
-  if (summary && (step !== 0 || vstep !== 0)) {
+  const onTitle = document.body.classList.contains("on-title");
+  if ((e.key === "Enter" || (onTitle && e.key === " ")) && (onTitle || summary)) startNextRound();
+  else if (onTitle) return;
+  else if (summary && (step !== 0 || vstep !== 0)) {
     holdUntil = Date.now() + MANUAL_HOLD_MS;
     if (step !== 0) selectFish(step);
     else selectPlayer(vstep);

@@ -148,11 +148,11 @@ describe("default rules", () => {
   });
 
   it("keep the round timing through an upgrade and validate its bounds", () => {
-    const v5 = { version: 5, rules: [], round: { roundSec: 600, summarySec: 30 } };
-    expect(upgradeRulesConfig(v5, defaultRulesConfig, 6).round).toEqual({ roundSec: 600, summarySec: 30 });
+    const v5 = { version: 5, rules: [], round: { roundSec: 600 } };
+    expect(upgradeRulesConfig(v5, defaultRulesConfig, 6).round).toEqual({ roundSec: 600 });
     expect(parseRulesConfig({ rules: [], round: { roundSec: 420 } }).round).toEqual({ roundSec: 420 });
     expect(() => parseRulesConfig({ rules: [], round: { roundSec: 5 } })).toThrow();
-    expect(() => parseRulesConfig({ rules: [], round: { summarySec: 1 } })).toThrow();
+    expect(parseRulesConfig({ rules: [], round: { roundSec: 300, summarySec: 30 } }).round).toEqual({ roundSec: 300 }); // old field dropped
   });
 
   it("reset re-balanced gift rules when upgrading past their version", () => {

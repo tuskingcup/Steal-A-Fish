@@ -15,7 +15,8 @@ export type RoundPhase = "idle" | "open" | "summary";
 
 export interface RoundConfig {
   roundMs: number;
-  summaryMs: number;
+  /** How long the summary shows before the next round opens; null = until it is started by hand. */
+  summaryMs: number | null;
   /** Every joined player gets a free cast this often; null = no free casts (likes and gifts only). */
   autoCastMs: number | null;
   /** Delay before a new player's first free cast. */
@@ -24,7 +25,7 @@ export interface RoundConfig {
 
 export const DEFAULT_ROUND_CONFIG: RoundConfig = {
   roundMs: 5 * 60_000,
-  summaryMs: 60_000,
+  summaryMs: null,
   autoCastMs: null,
   firstCastMs: 3_000,
 };
@@ -155,13 +156,12 @@ export class RoundGame {
   }
 
   /**
-   * Change how long rounds and summaries last. The phase in progress keeps its start time and
-   * gets the new length (so a round that has already run longer than that ends on the next tick).
+   * Change how long a round lasts. The round in progress keeps its start time and gets the new
+   * length (so a round that has already run longer than that ends on the next tick).
    */
-  setTimes(roundMs: number, summaryMs: number): void {
-    this.config = { ...this.config, roundMs, summaryMs };
+  setRoundLength(roundMs: number): void {
+    this.config = { ...this.config, roundMs };
     if (this.phase === "open") this.endsAt = this.phaseAt + roundMs;
-    else if (this.phase === "summary") this.endsAt = this.phaseAt + summaryMs;
   }
 
   state(): RoundState {
@@ -186,7 +186,7 @@ export class RoundGame {
   end(now: number): RoundSummary {
     this.phase = "summary";
     this.phaseAt = now;
-    this.endsAt = now + this.config.summaryMs;
+    this.endsAt = this.config.summaryMs === null ? null : now + this.config.summaryMs;
     this.lastSummary = this.summary();
     return this.lastSummary;
   }

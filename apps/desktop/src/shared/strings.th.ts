@@ -2,6 +2,14 @@ import type { Action, LiveEvent, MutationId, Rarity, RoundPhase, SizeClass, Trig
 
 /** All player-facing Thai text lives here. */
 export const th = {
+  // Title screen (shown when the game window opens) and the window titles.
+  gameName: "Fishing Tok",
+  start: "START",
+  credit: "created by tuskung",
+  windowSettings: "Fishing Tok — ตั้งค่า",
+  /** The summary waits for the streamer: this button opens the next round. */
+  nextRound: "START รอบต่อไป",
+  nextRoundKey: "หรือกด Enter",
   waiting: "รอของขวัญจากคนดู…",
   hostName: "เจ้าของท่าเรือ",
   newChampion: "ขึ้นอันดับ 1 แล้ว!",
@@ -11,7 +19,6 @@ export const th = {
   round: (n: number) => `รอบที่ ${n}`,
   players: (n: number) => `ผู้เล่น ${n} คน`,
   phase: { idle: "รอเริ่มรอบ", open: "กำลังตกปลา", summary: "สรุปผล" } satisfies Record<RoundPhase, string>,
-  nextRoundIn: (t: string) => `รอบใหม่ใน ${t}`,
   timeLeft: (t: string) => `เหลือ ${t}`,
   caught: "ได้",
   newBest: "สถิติใหม่!",
@@ -73,9 +80,8 @@ export const th = {
   endRound: "จบรอบตอนนี้",
   simJoin: "คอมเมนต์ 1 (ร่วมเล่น)",
   roundMinutes: "เวลาเล่นต่อรอบ (นาที)",
-  summarySeconds: "เวลาหน้าสรุปผล (วินาที)",
-  roundTimesHint: (minMin: number, maxMin: number, minSec: number, maxSec: number) =>
-    `เวลาเล่น ${minMin}–${maxMin} นาที · หน้าสรุปผล ${minSec}–${maxSec} วินาที · กดบันทึกแล้วมีผลกับรอบที่กำลังเล่นทันที (นับจากตอนเริ่มรอบ)`,
+  roundTimesHint: (minMin: number, maxMin: number) =>
+    `เวลาเล่น ${minMin}–${maxMin} นาที · กดบันทึกแล้วมีผลกับรอบที่กำลังเล่นทันที (นับจากตอนเริ่มรอบ) · หน้าสรุปผลไม่มีนับถอยหลัง: อยู่จนกว่าจะกด START รอบต่อไปในจอเกม (หรือปุ่มเริ่มรอบใหม่ด้านบน)`,
   roundTimesInvalid: "ตัวเลขไม่อยู่ในช่วงที่ตั้งได้",
   roundRules: (minutes: number) => `รอบละ ${minutes} นาที · พิมพ์ 1 ในแชทเพื่อร่วมเล่น · กดใจครบตามที่ตั้งไว้ = ตกปลา 1 ครั้ง · ของขวัญ = ตกปลาแบบการันตีแต้ม (กดใจหรือส่งของขวัญแล้วได้ร่วมเล่นอัตโนมัติ) · จัดอันดับจากแต้มรวมของปลาทุกตัวที่ตกได้`,
   likesPerCast: "กดใจกี่ครั้ง = ตกปลา 1 ครั้ง (นับแยกแต่ละคน)",

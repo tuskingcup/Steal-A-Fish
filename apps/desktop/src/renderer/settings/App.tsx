@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DEFAULT_ROUND_CONFIG, MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, ROUND_SEC_MAX, ROUND_SEC_MIN, SIZE_CLASSES, SPECIES, speciesPercents, SUMMARY_SEC_MAX, SUMMARY_SEC_MIN, type RoundState, type Rule, type RulesConfig } from "@saf/core";
+import { DEFAULT_ROUND_CONFIG, MUTATIONS, NORMAL_SIZE_CHANCE, PITY_CASTS, RARITIES, rarityPercents, ROUND_SEC_MAX, ROUND_SEC_MIN, SIZE_CLASSES, SPECIES, speciesPercents, type RoundState, type Rule, type RulesConfig } from "@saf/core";
 import type { ConnectionState } from "@saf/live";
 import type { LogEntry, SimGiftInput } from "../../shared/api";
 import { describeAction, describeEvent, describeTrigger, formatClock, formatWeight, mutationTh, rarityTh, sizeClassTh, speciesTh, th } from "../../shared/strings.th";
@@ -8,7 +8,6 @@ import { describeAction, describeEvent, describeTrigger, formatClock, formatWeig
 const PERCENTS = rarityPercents();
 const speciesChance = speciesPercents();
 const DEFAULT_ROUND_SEC = DEFAULT_ROUND_CONFIG.roundMs / 1000;
-const DEFAULT_SUMMARY_SEC = DEFAULT_ROUND_CONFIG.summaryMs / 1000;
 const fmtPct = (p: number) => (p >= 1 ? p.toFixed(1) : p >= 0.01 ? p.toFixed(2) : p.toFixed(3));
 
 // Simulator gifts (ids as TikTok reports them; rules match by coin value or by name).
@@ -55,7 +54,6 @@ export function App() {
   const [likesInput, setLikesInput] = useState("");
   const [likesMsg, setLikesMsg] = useState("");
   const [roundMinInput, setRoundMinInput] = useState(String(DEFAULT_ROUND_SEC / 60));
-  const [summarySecInput, setSummarySecInput] = useState(String(DEFAULT_SUMMARY_SEC));
   const [roundMsg, setRoundMsg] = useState("");
 
   useEffect(() => {
@@ -65,7 +63,6 @@ export function App() {
       const likes = likesRule(r);
       if (likes) setLikesInput(String(likes.every));
       setRoundMinInput(String(+((r.round?.roundSec ?? DEFAULT_ROUND_SEC) / 60).toFixed(2)));
-      setSummarySecInput(String(r.round?.summarySec ?? DEFAULT_SUMMARY_SEC));
     };
     void window.saf.getRules().then(showRules);
     const offRules = window.saf.onRulesChanged(showRules);
@@ -96,17 +93,16 @@ export function App() {
     setTimeout(() => setLikesMsg(""), 2000);
   }
 
-  /** Change how long a round (and its summary) lasts; the round in progress picks it up too. */
+  /** Change how long a round lasts; the round in progress picks it up too. */
   async function saveRoundTimes() {
     const roundSec = Math.round(Number(roundMinInput) * 60);
-    const summarySec = Math.round(Number(summarySecInput));
     const ok = (n: number, min: number, max: number) => Number.isFinite(n) && n >= min && n <= max;
     if (!rules) return;
-    if (!ok(roundSec, ROUND_SEC_MIN, ROUND_SEC_MAX) || !ok(summarySec, SUMMARY_SEC_MIN, SUMMARY_SEC_MAX)) {
+    if (!ok(roundSec, ROUND_SEC_MIN, ROUND_SEC_MAX)) {
       setRoundMsg(th.roundTimesInvalid);
       return;
     }
-    const result = await window.saf.saveRules({ ...rules, round: { roundSec, summarySec } });
+    const result = await window.saf.saveRules({ ...rules, round: { roundSec } });
     setRoundMsg(result.ok ? th.likesPerCastSaved : result.error);
     setTimeout(() => setRoundMsg(""), 2500);
   }
@@ -173,16 +169,12 @@ export function App() {
             {th.roundMinutes}
             <input type="number" min={ROUND_SEC_MIN / 60} max={ROUND_SEC_MAX / 60} step={0.5} value={roundMinInput} onChange={(e) => setRoundMinInput(e.target.value)} style={{ width: 110 }} />
           </label>
-          <label>
-            {th.summarySeconds}
-            <input type="number" min={SUMMARY_SEC_MIN} max={SUMMARY_SEC_MAX} step={5} value={summarySecInput} onChange={(e) => setSummarySecInput(e.target.value)} style={{ width: 110 }} />
-          </label>
           <button className="primary" style={{ alignSelf: "flex-end" }} onClick={() => void saveRoundTimes()}>
             {th.save}
           </button>
           {roundMsg && <span className="hint" style={{ alignSelf: "flex-end" }}>{roundMsg}</span>}
         </div>
-        <p className="hint">{th.roundTimesHint(ROUND_SEC_MIN / 60, ROUND_SEC_MAX / 60, SUMMARY_SEC_MIN, SUMMARY_SEC_MAX)}</p>
+        <p className="hint">{th.roundTimesHint(ROUND_SEC_MIN / 60, ROUND_SEC_MAX / 60)}</p>
         <p className="hint">{th.roundRules(+((rules?.round?.roundSec ?? DEFAULT_ROUND_SEC) / 60).toFixed(2))}</p>
       </section>
 

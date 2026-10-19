@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:">
-  <title>Steal A Fish — Game</title>
+  <title>Fishing Tok</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #0C2B40; }
     body { font-family: "Mitr", "Noto Sans Thai", system-ui, sans-serif; color: #fff; }
@@ -72,7 +72,33 @@
     #summary .exprice { font-size: 26px; font-weight: 900; color: #FFD866; text-shadow: 0 2px 0 #0009; margin-top: 2px; }
     #summary .exprice small { color: #9FE3E6; font-size: 12px; font-weight: 400; margin-left: 10px; }
     #summary .hint { font-size: 12px; color: #9FE3E6; text-align: center; margin-top: 4px; }
+    #summary .nextbtn { pointer-events: auto; align-self: center; margin-top: 2px; font: inherit; font-size: 20px; font-weight: 900; letter-spacing: 1px;
+      color: #3A2500; background: linear-gradient(#FFE07A, #FFB52E); border: 3px solid #FFF3C4; border-radius: 999px; padding: 8px 28px; cursor: pointer;
+      box-shadow: 0 4px 0 #A8640E, 0 0 22px #FFC23D88; animation: glow 1.6s ease-in-out infinite; }
+    #summary .nextbtn:active { transform: translateY(3px); box-shadow: 0 1px 0 #A8640E; }
+    #summary .nextkey { text-align: center; font-size: 12px; color: #CFE8EE; text-shadow: 0 1px 2px #000; }
     body.in-summary #feed { display: none; }
+
+    /* Title screen: shown when the game window opens, over the live bay. */
+    #title { position: fixed; inset: 0; z-index: 10; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      background: linear-gradient(180deg, #0C2B4000 0%, #0C2B4055 45%, #061722E6 100%); }
+    body.on-title #title { display: flex; }
+    body.on-title #hud, body.on-title #tags, body.on-title #card { display: none; }
+    #title .logo { animation: bob 3.2s ease-in-out infinite; margin-top: -10vh; }
+    #title .hook { font-size: 54px; filter: drop-shadow(0 4px 0 #0008); }
+    #title .name { font-size: 76px; font-weight: 900; line-height: .95; letter-spacing: 1px; color: #FFFFFF;
+      text-shadow: 0 5px 0 #0E4E6E, 0 9px 0 #06263A, 0 0 30px #5FE3FFAA; }
+    #title .name .tok { display: inline-block; color: #FFC23D; transform: rotate(-6deg); text-shadow: 0 5px 0 #A8640E, 0 9px 0 #5A3204, 0 0 30px #FFC23D99; }
+    #title .wave { margin: 14px auto 0; width: 220px; height: 10px; border-radius: 999px; background: repeating-linear-gradient(90deg, #5FE3FF 0 18px, #2D9AD8 18px 36px); opacity: .85; animation: wave 1.2s linear infinite; }
+    #title .startbtn { margin-top: 9vh; font: inherit; font-size: 34px; font-weight: 900; letter-spacing: 6px; color: #3A2500; cursor: pointer;
+      background: linear-gradient(#FFE07A, #FFB52E); border: 4px solid #FFF3C4; border-radius: 999px; padding: 12px 56px 12px 62px;
+      box-shadow: 0 6px 0 #A8640E, 0 0 34px #FFC23D99; animation: glow 1.6s ease-in-out infinite; }
+    #title .startbtn:hover { filter: brightness(1.08); }
+    #title .startbtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #A8640E; }
+    #title .credit { position: absolute; bottom: 22px; left: 0; right: 0; font-size: 14px; letter-spacing: 1px; color: #CFE8EECC; text-shadow: 0 1px 3px #000; }
+    @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes glow { 0%, 100% { box-shadow: 0 6px 0 #A8640E, 0 0 18px #FFC23D66; } 50% { box-shadow: 0 6px 0 #A8640E, 0 0 40px #FFC23DDD; } }
+    @keyframes wave { from { background-position: 0 0; } to { background-position: 36px 0; } }
 
     /* Big-catch reveal */
     body.revealing #feed, body.revealing #tags, body.revealing #card { display: none; }
@@ -100,7 +126,7 @@
     @keyframes in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
   </style>
 </head>
-<body>
+<body class="on-title">
   <canvas id="scene"></canvas>
   <div id="tags"></div>
   <div id="card"></div>
@@ -108,6 +134,7 @@
   <div id="revealLabels"></div>
   <div id="reveal"></div>
   <div id="flash"></div>
+  <div id="title"></div>
   <div id="hud">
     <div id="roundbar"></div>
     <div id="feed"></div>

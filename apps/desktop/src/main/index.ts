@@ -5,6 +5,7 @@ import { SimulatedLiveSource, TikTokLiveSource, type LiveSource } from "@saf/liv
 import { IPC, type ConnectInput, type JoinedEvent, type LogEntry, type LuckyEvent, type RankedPlayer, type SimGiftInput } from "../shared/api";
 import { RulesStore } from "./rulesStore";
 import { startOverlay } from "./overlay";
+import { th } from "../shared/strings.th";
 
 let gameWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -115,11 +116,9 @@ function announceNewRound(): void {
   sendPodium(true);
 }
 
-/** Round and summary lengths come from settings (rules.json); the round in progress picks them up too. */
+/** The round length comes from settings (rules.json); the round in progress picks it up too. */
 function applyRoundTimes(config: RulesConfig): void {
-  const roundMs = config.round?.roundSec !== undefined ? config.round.roundSec * 1000 : DEFAULT_ROUND_CONFIG.roundMs;
-  const summaryMs = config.round?.summarySec !== undefined ? config.round.summarySec * 1000 : DEFAULT_ROUND_CONFIG.summaryMs;
-  game.setTimes(roundMs, summaryMs);
+  game.setRoundLength(config.round?.roundSec !== undefined ? config.round.roundSec * 1000 : DEFAULT_ROUND_CONFIG.roundMs);
   sendRound();
 }
 
@@ -259,12 +258,13 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.roundStart, () => startRound());
   ipcMain.handle(IPC.roundEnd, () => endRound());
 
-  game.start(Date.now());
+  // No round yet: the game window opens on the title screen and its START button opens round 1.
+  // After each round the summary stays up until START is pressed again.
   const ticker = setInterval(tick, 500);
 
   // 540×960 is a quarter of the 1080×1920 portrait stream frame; OBS scales it up.
-  gameWindow = createWindow("game", { width: 540, height: 960, title: "Steal A Fish — Game", backgroundColor: "#0C2B40" });
-  settingsWindow = createWindow("settings", { width: 1100, height: 780, title: "Steal A Fish — Settings", backgroundColor: "#0E1C24" });
+  gameWindow = createWindow("game", { width: 540, height: 960, title: th.gameName, backgroundColor: "#0C2B40" });
+  settingsWindow = createWindow("settings", { width: 1100, height: 780, title: th.windowSettings, backgroundColor: "#0E1C24" });
 
   gameWindow.on("closed", () => (gameWindow = null));
   // A reloaded game window (e.g. dev HMR) catches up on the round, its players and the podium.

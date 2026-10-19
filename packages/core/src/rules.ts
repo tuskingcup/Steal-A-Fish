@@ -74,20 +74,16 @@ export const ruleSchema = z.object({
 /** Bounds for the round timing in settings. */
 export const ROUND_SEC_MIN = 60;
 export const ROUND_SEC_MAX = 60 * 60;
-export const SUMMARY_SEC_MIN = 10;
-export const SUMMARY_SEC_MAX = 10 * 60;
 
 export const rulesConfigSchema = z.object({
   /** Bumped when the default rules change shape; older files are replaced (and backed up). */
   version: z.number().int().optional(),
   rules: z.array(ruleSchema),
-  /** Round timing set in settings; missing fields use the built-in defaults (5 min play, 60 s summary). */
+  /** Round length set in settings (missing: 5 min). The summary waits for START, so it has no length. */
   round: z
     .object({
       /** How long a round is open for play. */
       roundSec: z.number().int().min(ROUND_SEC_MIN).max(ROUND_SEC_MAX).optional(),
-      /** How long the summary shows before the next round opens. */
-      summarySec: z.number().int().min(SUMMARY_SEC_MIN).max(SUMMARY_SEC_MAX).optional(),
     })
     .optional(),
 });

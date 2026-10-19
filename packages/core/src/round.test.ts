@@ -174,14 +174,25 @@ describe("RoundGame", () => {
   it("applies a new round length to the round in progress and the ones after it", () => {
     const g = newGame();
     g.start(0);
-    g.setTimes(600_000, 20_000);
+    g.setRoundLength(600_000);
     expect(g.state().endsAt).toBe(600_000); // 5 min → 10 min, counted from the round's start
     expect(g.tick(300_000).ended).toBeNull();
     expect(g.tick(600_000).ended).not.toBeNull();
-    expect(g.state().endsAt).toBe(620_000);
-    g.tick(620_000);
-    expect(g.state()).toMatchObject({ phase: "open", endsAt: 1_220_000 });
-    g.setTimes(60_000, 20_000); // shorter than the time already played: ends on the next tick
-    expect(g.tick(700_000).ended).not.toBeNull();
+    g.tick(660_000); // the summary (60 s in this config) opens the next round
+    expect(g.state()).toMatchObject({ phase: "open", endsAt: 1_260_000 });
+    g.setRoundLength(60_000); // shorter than the time already played: ends on the next tick
+    expect(g.tick(800_000).ended).not.toBeNull();
+  });
+
+  it("by default waits on the summary until the next round is started by hand", () => {
+    const g = new RoundGame(createSeededRng(5));
+    expect(g.state().phase).toBe("idle");
+    g.start(0);
+    g.tick(300_000);
+    expect(g.state()).toMatchObject({ phase: "summary", endsAt: null });
+    expect(g.tick(10_000_000).started).toBe(false);
+    expect(g.state().phase).toBe("summary");
+    g.start(10_000_000);
+    expect(g.state()).toMatchObject({ phase: "open", round: 2 });
   });
 });
