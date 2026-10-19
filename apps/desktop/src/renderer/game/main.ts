@@ -39,7 +39,7 @@ function push(html: string): void {
 const nameWords = th.gameName.split(" ");
 const nameTail = nameWords.pop() ?? "";
 titleEl.innerHTML =
-  `<div class="logo"><div class="hook">🎣</div><div class="name">${esc(nameWords.join(" "))}<br><span class="tok">${esc(nameTail)}</span></div><div class="wave"></div></div>` +
+  `<div class="logo"><div class="hook">🎣</div><div class="name">${esc(nameWords.join(" "))}<br><span class="tok">${esc(nameTail)}</span></div></div>` +
   `<button class="startbtn" type="button">${esc(th.start)}</button>` +
   `<div class="credit">${esc(th.credit)}</div>`;
 titleEl.querySelector(".startbtn")!.addEventListener("click", () => startNextRound());
