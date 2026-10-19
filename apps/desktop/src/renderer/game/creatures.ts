@@ -281,41 +281,84 @@ function orca(scene: Scene): CreatureTemplate {
 }
 
 function blueWhale(scene: Scene): CreatureTemplate {
-  const base = hexRgb("#4E6C87");
-  const mottle = hexRgb("#7E98AE");
-  const grooveA = hexRgb("#A9BCCB");
-  const grooveB = hexRgb("#8197AA");
-  const mouth = hexRgb("#22303B");
+  // A colossal, blimp-round whale: a blunt rounded head, a deep body tapering to a short lifted
+  // tail stock, blue above and a huge pale belly that sweeps up over the whole lower face, with
+  // long throat pleats; a tiny eye, swept-back flippers and small flukes make it look even bigger.
+  const blue = hexRgb("#3D84C6");
+  const shine = hexRgb("#62A6DE");
+  const belly = hexRgb("#DCDFE0");
+  const bellyShade = hexRgb("#C6CBCD");
+  const R: [number, number, number] = [0.5, 0.2, 0.19];
+  const taper = (x: number) => (x < 0 ? 1 - Math.pow(-x / 0.5, 1.6) * 0.75 : 1 - Math.pow(x / 0.5, 4) * 0.15);
+  const lift = (x: number) => (x < 0 ? 0.07 * Math.pow(-x / 0.5, 2) : 0);
+  /** The exact (smooth) half-width of the body at (x, y), or null off the body. */
+  const halfWidth = (x: number, y: number): number | null => {
+    const Y = (y - lift(x)) / taper(x);
+    const q = 1 - (x / R[0]) ** 2 - (Y / R[1]) ** 2;
+    return q <= 0 ? null : R[2] * Math.sqrt(q) * taper(x);
+  };
+  // The belly line: high on the face, sweeping down towards the tail stock.
+  const bellyLine = (x: number) => -0.04 + ((x + 0.3) / 0.8) * 0.14;
   const body = ell(
     scene,
-    [0.5, 0.085, 0.095],
+    R,
     Vector3.Zero(),
     (x, y, z) => {
-      if (Math.abs(y + 0.014) < 0.006 && x > 0.2 && Math.abs(z) > 0.03) return mouth;
-      if (y < -0.03 && x > -0.12) return Math.sin(z * 150) > 0.2 ? grooveA : grooveB;
-      return hash01(Math.floor(x * 40) * 7 + Math.floor(y * 40) * 3 + Math.floor(z * 40)) > 0.72 ? mottle : base;
+      if (y < bellyLine(x)) return y < -0.13 ? bellyShade : belly;
+      return y > 0.12 && x > 0.05 && x < 0.32 && Math.abs(z) < 0.07 ? shine : blue;
     },
     {
-      seg: 18,
+      seg: 28,
       deform: (p) => {
-        const t = p.x < 0 ? 1 - Math.pow(-p.x / 0.5, 1.3) * 0.85 : 1 - Math.pow(p.x / 0.5, 2) * 0.2;
-        p.y *= t;
+        const t = taper(p.x);
+        p.y = p.y * t + lift(p.x);
         p.z *= t;
-        if (p.y > 0 && p.x > 0.15) p.y *= 1 - 0.35 * ((p.x - 0.15) / 0.35); // broad, flat head
       },
     },
   );
-  const s = probe(body);
   const parts: Mesh[] = [body];
-  parts.push(flatFin(scene, [[[-0.31, s.top(-0.31) - 0.02], [-0.24, s.top(-0.24) - 0.02], [-0.3, s.top(-0.27) + 0.04]]], "#425E78"));
   for (const side of [-1, 1]) {
-    const y = s.bottom(0.18) * 0.55;
-    parts.push(sideFin(scene, "pec", new Vector3(0.18, y, side * (s.halfWidth(0.18, y) - 0.008)), side, 0.95, 0.2, "#4A6782"));
-    parts.push(ell(scene, [0.012, 0.004, 0.006], new Vector3(0.3, s.top(0.3), side * 0.012), "#1E2A34"));
-    parts.push(ell(scene, [0.007, 0.007, 0.005], new Vector3(0.33, -0.004, side * (s.halfWidth(0.33, -0.004) - 0.002)), "#101418"));
+    // Long throat pleats: thin dark grooves on the belly, parallel to the belly line.
+    for (let k = 1; k <= 6; k++) {
+      const path: Vector3[] = [];
+      for (let x = 0.47; x >= -0.36; x -= 0.02) {
+        const y = bellyLine(x) - k * 0.03;
+        const w = halfWidth(x, y);
+        if (w === null || w < 0.02) {
+          if (path.length > 0) break;
+          continue;
+        }
+        path.push(new Vector3(x, y, side * (w + 0.001)));
+      }
+      if (path.length > 2) parts.push(tube(scene, path, 0.0032, 0.0032, "#59646A", 4));
+    }
+    // A tiny eye just above the belly line: it is what makes the rest look enormous.
+    const ey = bellyLine(0.33) + 0.04;
+    parts.push(ell(scene, [0.009, 0.009, 0.006], new Vector3(0.33, ey, side * ((halfWidth(0.33, ey) ?? 0.1) - 0.002)), "#121619"));
+    // Swept-back flippers standing out from the flanks (solid, so they catch the light), a
+    // smaller pair further back. Each is a flattened ellipsoid drawn to a point at its tip.
+    for (const [x, len] of [[0.04, 0.2], [-0.19, 0.14]] as const) {
+      const y = bellyLine(x) + 0.06;
+      const root = new Vector3(x, y, side * ((halfWidth(x, y) ?? 0.1) - 0.01));
+      const fin = ell(scene, [len / 2, len * 0.32, 0.012], Vector3.Zero(), "#4A93D3", {
+        seg: 10,
+        deform: (p) => {
+          const k = Math.pow(Math.min(1, Math.max(0, 0.5 + p.x / len)), 0.7); // 0 at the tip (−x), 1 at the root
+          p.y *= k;
+          p.z *= 0.4 + 0.6 * k;
+          p.x -= len / 2; // the root at the origin, the tip back along −x
+        },
+      });
+      // Tip swept up and back, the blade turned out from the body.
+      fin.rotation.set(side * 0.7, 0, -0.45);
+      fin.position.copyFrom(root);
+      fin.bakeCurrentTransformIntoVertices();
+      parts.push(fin);
+    }
   }
-  const tailParts = [ell(scene, [0.06, 0.02, 0.025], new Vector3(0.03, 0, 0), "#4A6782"), flukes(scene, 0.16, 0.13, 0.02, "#4A6782")];
-  return { body: merge("whale", parts), moving: [{ mesh: hide(merge("whaleFlukes", tailParts)), pivot: new Vector3(-0.46, 0, 0), axis: "z", amp: 0.25, speed: 1.6 }] };
+  const tailY = lift(-0.47);
+  const tailParts = [ell(scene, [0.06, 0.035, 0.04], new Vector3(0.03, 0, 0), "#3577B6"), flukes(scene, 0.22, 0.17, 0.03, "#3577B6")];
+  return { body: merge("whale", parts), moving: [{ mesh: hide(merge("whaleFlukes", tailParts)), pivot: new Vector3(-0.47, tailY, 0), axis: "z", amp: 0.22, speed: 1.2 }] };
 }
 
 // ---------- Bloop ----------
