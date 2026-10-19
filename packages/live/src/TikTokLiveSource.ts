@@ -49,7 +49,10 @@ export class TikTokLiveSource extends BaseLiveSource {
     const connection = new TikTokLiveConnection(this.options.uniqueId, {
       signApiKey: this.options.signApiKey,
       processInitialData: false,
-      enableExtendedGiftInfo: true,
+      // Off on purpose: it fetches the room's gift list through a signed request that Euler
+      // Stream only allows on its paid Business plan, which made connecting fail. Gift events
+      // already carry the gift's name, coin value and streak type (`data.gift`).
+      enableExtendedGiftInfo: false,
     });
     this.connection = connection;
     this.wire(connection);

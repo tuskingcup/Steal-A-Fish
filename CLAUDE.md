@@ -113,7 +113,7 @@ Rules live in `rules.json` in userData, hot-reloaded, and edited through the set
 ## Hard constraints
 
 - **No real-world value.** Coins and fish can never be exchanged for money, items or anything outside the game, and cannot be traded between players. This avoids gambling-like mechanics. Show drop rates publicly in the settings/overlay.
-- `tiktok-live-connector` is unofficial and may break or require a sign server/API key. Keep all TikTok-specific code inside `TikTokLiveSource`.
+- `tiktok-live-connector` is unofficial and may break or require a sign server/API key. Keep all TikTok-specific code inside `TikTokLiveSource`. Keep `enableExtendedGiftInfo` off: it signs a `gift/list` request that Euler Stream only allows on its paid Business plan (connecting failed with "This endpoint requires a Business plan"); gift events already carry the gift's name, coin value and type.
 - Never commit API keys or session cookies. Use the OS keychain or an untracked config file.
 - Unsigned builds trigger Windows SmartScreen and macOS Gatekeeper warnings. Document the workaround in the README until signing is set up.
 
