@@ -8,6 +8,7 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
+import { CreateRibbon } from "@babylonjs/core/Meshes/Builders/ribbonBuilder";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { avatarFor, type MutationId, type Rarity } from "@saf/core";
@@ -177,10 +178,59 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
     };
     switch (key) {
       case "boat": {
-        const hull = add(CreateBox("hull", { width: 1, height: 0.18, depth: 0.3 }, scene), "#8A5A36");
-        hull.position.y = 0.09;
-        const cabin = add(CreateBox("cabin", { width: 0.3, height: 0.25, depth: 0.22 }, scene), "#EDE6D3");
-        cabin.position.set(-0.1, 0.3, 0);
+        // A colourful Thai fishing boat, 1 unit long (bow at +x): a shaped hull whose sheer rises
+        // to a raised bow — red below the waterline, a white stripe, blue topsides — a plank deck,
+        // a white wheelhouse with a blue roof and windows, a mast with a flag and a lifebuoy.
+        const halfWidth = (x: number) => (x < 0 ? 0.15 - 0.035 * (-x / 0.5) ** 2 : 0.15 * Math.max(0, 1 - (x / 0.5) ** 1.8) ** 0.6);
+        const sheer = (x: number) => 0.17 + 0.11 * Math.max(0, x / 0.5) ** 2;
+        const keel = (x: number) => -0.03 + 0.08 * Math.max(0, x / 0.5) ** 2.5;
+        const stripe = (x: number) => keel(x) + (sheer(x) - keel(x)) * 0.5;
+        const stations = Array.from({ length: 17 }, (_, i) => -0.5 + i / 16);
+        const ribbon = (name: string, section: (x: number) => Vector3[], color: string) =>
+          flat(add(CreateRibbon(name, { pathArray: stations.map(section), sideOrientation: Mesh.DOUBLESIDE }, scene), color));
+        ribbon("hullBottom", (x) => {
+          const w = halfWidth(x);
+          const k = keel(x);
+          const s0 = stripe(x);
+          return [new Vector3(x, s0, -w), new Vector3(x, k + 0.03, -w * 0.6), new Vector3(x, k, 0), new Vector3(x, k + 0.03, w * 0.6), new Vector3(x, s0, w)];
+        }, "#B8402F");
+        for (const side of [-1, 1]) {
+          ribbon("hullStripe", (x) => [new Vector3(x, stripe(x), side * halfWidth(x)), new Vector3(x, stripe(x) + 0.02, side * halfWidth(x))], "#F4F1E8");
+          ribbon("hullSide", (x) => [new Vector3(x, stripe(x) + 0.02, side * halfWidth(x)), new Vector3(x, sheer(x), side * halfWidth(x))], "#2F6DB5");
+          ribbon("gunwale", (x) => [new Vector3(x, sheer(x), side * halfWidth(x)), new Vector3(x, sheer(x) + 0.012, side * halfWidth(x) * 0.97)], "#F2C14E");
+        }
+        ribbon("deck", (x) => [new Vector3(x, sheer(x) - 0.03, -halfWidth(x) * 0.96), new Vector3(x, sheer(x) - 0.03, halfWidth(x) * 0.96)], "#C89A62");
+        const transom = add(CreateBox("transom", { width: 0.012, height: sheer(-0.5) - keel(-0.5), depth: halfWidth(-0.5) * 2 }, scene), "#2F6DB5");
+        transom.position.set(-0.5, (sheer(-0.5) + keel(-0.5)) / 2, 0);
+        // Wheelhouse towards the stern.
+        const deckY = sheer(-0.2) - 0.03;
+        const cabin = add(CreateBox("cabin", { width: 0.26, height: 0.16, depth: 0.2 }, scene), "#F4F1E8");
+        cabin.position.set(-0.2, deckY + 0.08, 0);
+        const roof = add(CreateBox("roof", { width: 0.32, height: 0.025, depth: 0.25 }, scene), "#2F6DB5");
+        roof.position.set(-0.2, deckY + 0.17, 0);
+        for (const side of [-1, 1]) {
+          for (const wx of [-0.27, -0.13]) {
+            const win = add(CreateBox("window", { width: 0.06, height: 0.05, depth: 0.004 }, scene), "#1F3A5A", 0.1);
+            win.position.set(wx, deckY + 0.1, side * 0.101);
+          }
+        }
+        const front = add(CreateBox("windshield", { width: 0.004, height: 0.05, depth: 0.15 }, scene), "#1F3A5A", 0.1);
+        front.position.set(-0.069, deckY + 0.1, 0);
+        const buoy = add(CreateTorus("lifebuoy", { diameter: 0.07, thickness: 0.018, tessellation: 12 }, scene), "#F26B2E");
+        buoy.rotation.x = Math.PI / 2;
+        buoy.position.set(-0.2, deckY + 0.08, 0.104);
+        // Mast with a flag, and a short bow post with ribbons.
+        const mast = add(CreateCylinder("mast", { height: 0.3, diameter: 0.012, tessellation: 6 }, scene), "#6B4930");
+        mast.position.set(-0.2, deckY + 0.33, 0);
+        const flag = add(CreateBox("flag", { width: 0.08, height: 0.05, depth: 0.004 }, scene), "#D93A3A");
+        flag.position.set(-0.24, deckY + 0.45, 0);
+        const post = add(CreateCylinder("bowPost", { height: 0.08, diameter: 0.012, tessellation: 6 }, scene), "#6B4930");
+        post.position.set(0.44, sheer(0.44) + 0.03, 0);
+        for (const [i, color] of ["#E84A5F", "#F2C14E", "#3FA7D6"].entries()) {
+          const tie = add(CreateBox("ribbon", { width: 0.006, height: 0.05, depth: 0.012 }, scene), color);
+          tie.position.set(0.44 - 0.006, sheer(0.44) + 0.04, (i - 1) * 0.014);
+          tie.rotation.z = 0.25;
+        }
         break;
       }
       case "house": {
