@@ -457,62 +457,126 @@ function bloop(scene: Scene): CreatureTemplate {
 // ---------- El Gran Maja ----------
 
 function elGranMaja(scene: Scene): CreatureTemplate {
-  const back = hexRgb("#1A4470");
-  const side = hexRgb("#1E4C7A");
-  const belly = hexRgb("#29608F");
-  const black = hexRgb("#050608");
-  // The mouth: an ellipse on the side of the huge head.
-  const mouthC = { x: 0.27, y: -0.025, a: 0.25, b: 0.09 };
-  const inMouth = (x: number, y: number) => Math.pow((x - mouthC.x) / mouthC.a, 2) + Math.pow((y - mouthC.y) / mouthC.b, 2) < 1;
-  const mouthEdge = (x: number, sign: number) => mouthC.y + sign * mouthC.b * Math.sqrt(Math.max(0, 1 - Math.pow((x - mouthC.x) / mouthC.a, 2)));
+  // A dark-blue deep-sea titan: a smooth whale-like body with a huge blunt head, its front one
+  // enormous gaping mouth — a real cavity carved into the head, black inside, with jagged white
+  // teeth hanging from the top and a white gum of teeth below — a row of glowing cyan eyes along
+  // each brow, and a long tail stalk curving up to a forked tail.
+  const back = hexRgb("#173E6B");
+  const side = hexRgb("#1D4C7E");
+  const belly = hexRgb("#2A6094");
+  const lip = hexRgb("#12304F");
+  const black = hexRgb("#040507");
+  const R: [number, number, number] = [0.5, 0.18, 0.21];
+  const FRONT = 0.3; // the head is cut flat here, and the mouth is carved into that face
+  const taper = (x: number) => (x < 0 ? 1 - Math.pow(-x / R[0], 1.25) * 0.9 : 1);
+  const lift = (x: number) => (x < -0.05 ? 0.27 * Math.pow((-x - 0.05) / 0.45, 2.2) : 0);
+  /** Mouth oval on the front face: centre height, half-height, half-width. */
+  const M = { y: -0.015, ry: 0.105, rz: 0.15 };
+  const inMouth = (y: number, z: number) => ((y - M.y) / M.ry) ** 2 + (z / M.rz) ** 2;
+  // The gape wraps round the sides from a corner at MOUTH_BACK, opening wider towards the front.
+  const MOUTH_BACK = 0.0;
+  const gapeHalf = (x: number) => (x <= MOUTH_BACK ? 0 : M.ry * 0.85 * Math.pow(Math.min(1, (x - MOUTH_BACK) / (FRONT - MOUTH_BACK)), 0.55));
+  const inGape = (x: number, y: number) => {
+    const h = gapeHalf(x);
+    return h <= 0 ? 9 : ((y - M.y) / h) ** 2;
+  };
   const body = ell(
     scene,
-    [0.5, 0.2, 0.17],
+    R,
     Vector3.Zero(),
-    (x, y) => (inMouth(x, y) ? black : y > 0.1 ? back : y > -0.02 ? side : belly),
+    (x, y, z) => {
+      const d = inMouth(y, z);
+      if (x > FRONT - 0.2 && d < 0.92) return black; // inside the mouth
+      if (x > FRONT - 0.03 && d < 1.25) return lip; // the dark lip around it
+      const g = inGape(x, y);
+      if (g < 0.8) return black; // the gape along the sides
+      if (g < 1.5) return lip;
+      return y > 0.08 ? back : y > -0.06 ? side : belly;
+    },
     {
-      seg: 20,
+      seg: 28,
       deform: (p) => {
-        const t = p.x > 0 ? 1 - Math.pow(p.x / 0.5, 4) * 0.4 : 1 - Math.pow(-p.x / 0.5, 1.25) * 0.88;
-        p.y *= t;
+        const t = taper(p.x);
+        p.y = p.y * t + lift(p.x);
         p.z *= t;
-        if (p.x < -0.05) p.y += 0.28 * Math.pow((-p.x - 0.05) / 0.45, 2); // the tail sweeps up
+        if (p.x > FRONT) p.x = FRONT + (p.x - FRONT) * 0.12; // a blunt, flat-fronted head
+        // The gape: a deep groove along both sides of the head, so the mouth shows from the side.
+        const g = inGape(p.x, p.y);
+        if (g < 1) p.z *= 1 - 0.6 * Math.sqrt(1 - g);
+        // Carve the mouth: front vertices inside the oval are pushed back into a deep bowl.
+        const d = inMouth(p.y, p.z);
+        if (p.x > FRONT - 0.05 && d < 1) p.x = FRONT - 0.17 * Math.sqrt(1 - d) - 0.01;
       },
     },
   );
-  const s = probe(body);
   const parts: Mesh[] = [body];
-  const glowParts: Mesh[] = [];
+  const white = "#ECE8E0";
+  // Jagged teeth hanging from the top of the mouth, uneven like the reference.
+  for (let k = -5; k <= 5; k++) {
+    const z = (k / 5.6) * M.rz * 0.9;
+    const yTop = M.y + M.ry * Math.sqrt(Math.max(0, 1 - (z / M.rz) ** 2)) - 0.004;
+    const len = 0.035 + hash01(k + 11) * 0.035;
+    const base = new Vector3(FRONT - 0.012, yTop, z);
+    parts.push(cone(scene, base, base.add(new Vector3(-0.012, -len, -z * 0.08)), 0.011, white, 4));
+  }
+  // Teeth along both sides of the gape: long ones hanging from the top lip, shorter ones below.
+  const sideZ = (x: number, y: number) => {
+    const Y = y / taper(x);
+    const q = 1 - (x / R[0]) ** 2 - (Y / R[1]) ** 2;
+    return q <= 0 ? 0.05 : R[2] * Math.sqrt(q);
+  };
   for (const sd of [-1, 1]) {
-    // Jagged white teeth along the top and bottom of the mouth, flat on the flank.
-    for (let x = 0.07, k = 0; x <= 0.44; x += 0.042, k++) {
-      const len = 0.022 + hash01(k * 3 + (sd > 0 ? 1 : 0)) * 0.03;
-      const yt = mouthEdge(x, 1) - 0.004;
-      const zt = sd * (s.halfWidth(x, yt) + 0.004);
-      parts.push(flatFin(scene, [[[x - 0.019, yt], [x + 0.019, yt], [x + 0.004, yt - len]]], "#ECE8E0", { z: zt }));
-      const yb = mouthEdge(x + 0.02, -1) + 0.004;
-      const zb = sd * (s.halfWidth(x + 0.02, yb) + 0.004);
-      parts.push(flatFin(scene, [[[x + 0.002, yb], [x + 0.036, yb], [x + 0.021, yb + len * 0.75]]], "#ECE8E0", { z: zb }));
+    for (let x = MOUTH_BACK + 0.04, k = 0; x < FRONT - 0.01; x += 0.032, k++) {
+      const h = gapeHalf(x);
+      const len = (0.03 + hash01(k * 5 + (sd > 0 ? 2 : 0)) * 0.03) * Math.min(1, h / 0.05);
+      const top = new Vector3(x, M.y + h * 0.95, sd * (sideZ(x, M.y + h * 0.95) - 0.012));
+      parts.push(cone(scene, top, top.add(new Vector3(0.004, -len, -sd * 0.01)), 0.009, white, 4));
+      const bottom = new Vector3(x + 0.016, M.y - h * 0.95, sd * (sideZ(x + 0.016, M.y - h * 0.95) - 0.012));
+      parts.push(cone(scene, bottom, bottom.add(new Vector3(0.004, len * 0.6, -sd * 0.01)), 0.008, white, 4));
     }
-    // A row of glowing cyan eyes above the mouth.
-    const eyes: [number, number][] = [[0.11, 0.03], [0.18, 0.028], [0.24, 0.02], [0.29, 0.018], [0.35, 0.022], [0.41, 0.026]];
+  }
+  // A white gum curving across the bottom of the mouth, set back inside it, with teeth on it.
+  const gum: Vector3[] = [];
+  for (let k = 0; k <= 12; k++) {
+    const z = (-0.8 + (k / 12) * 1.6) * M.rz * 0.8;
+    gum.push(new Vector3(FRONT - 0.07 + Math.abs(z) * 0.25, M.y - M.ry * 0.62 + (z / M.rz) ** 2 * 0.03, z));
+  }
+  parts.push(tube(scene, gum, 0.016, 0.016, white, 6));
+  for (let k = 1; k < 12; k += 1) {
+    const g = gum[k]!;
+    const len = 0.022 + hash01(k * 7) * 0.025;
+    parts.push(cone(scene, g.add(new Vector3(0, 0.008, 0)), g.add(new Vector3(0.004, 0.008 + len, 0)), 0.008, white, 4));
+  }
+  /** The exact (smooth) half-width of the body at (x, y), for seating the eyes. */
+  const halfWidth = (x: number, y: number): number => {
+    const Y = (y - lift(x)) / taper(x);
+    const q = 1 - (x / R[0]) ** 2 - (Y / R[1]) ** 2;
+    return q <= 0 ? 0.05 : R[2] * Math.sqrt(q) * taper(x);
+  };
+  // A row of glowing cyan eyes along each brow, small at the front, bigger further back, each
+  // sunk into a dark socket.
+  const glowParts: Mesh[] = [];
+  const eyes: [number, number][] = [[0.27, 0.015], [0.235, 0.017], [0.195, 0.02], [0.15, 0.024], [0.1, 0.028], [0.045, 0.032]];
+  for (const sd of [-1, 1]) {
     for (const [x, r] of eyes) {
-      const y = mouthEdge(x, 1) + 0.035;
-      const z = sd * (s.halfWidth(x, y) - r * 0.4);
-      glowParts.push(ell(scene, [r, r, r * 0.6], new Vector3(x, y, z), "#5FF3FF", { seg: 8 }));
+      const y = 0.1 + (0.27 - x) * 0.08;
+      const z = sd * (halfWidth(x, y) - r * 0.35);
+      parts.push(ell(scene, [r * 1.25, r * 1.25, r * 0.7], new Vector3(x, y, z), "#0A1C30", { seg: 8 }));
+      glowParts.push(ell(scene, [r, r, r * 0.75], new Vector3(x, y, z + sd * r * 0.25), "#5FF3FF", { seg: 8 }));
     }
-    const py = s.bottom(0.0) * 0.6;
-    parts.push(sideFin(scene, "pec", new Vector3(0.02, py, sd * (s.halfWidth(0.02, py) - 0.01)), sd, 1.0, 0.14, "#173E66"));
+    // Small pectoral fins low on the flanks.
+    const py = -0.1;
+    parts.push(sideFin(scene, "pec", new Vector3(0.05, py, sd * (halfWidth(0.05, py) - 0.01)), sd, 1.0, 0.13, "#173E66"));
   }
   // A forked tail at the top of the upward sweep.
-  const tail = finMesh(scene, "majaTail", tailTris("fork", 0.3, 0.025), 0, "#1A4470");
-  tail.rotation.z = -0.8;
+  const tail = finMesh(scene, "majaTail", tailTris("fork", 0.3, 0.03), 0, "#173E6B");
+  tail.rotation.z = -0.55;
   tail.bakeCurrentTransformIntoVertices();
   return {
     body: merge("elGranMaja", parts),
     glow: merge("elGranMajaEyes", glowParts),
     glowColor: "#5FF3FF",
-    moving: [{ mesh: hide(tail), pivot: new Vector3(-0.47, s.top(-0.47) - 0.03, 0), axis: "y", amp: 0.35, speed: 1.6 }],
+    moving: [{ mesh: hide(tail), pivot: new Vector3(-0.49, lift(-0.49), 0), axis: "y", amp: 0.3, speed: 1.4 }],
   };
 }
 
