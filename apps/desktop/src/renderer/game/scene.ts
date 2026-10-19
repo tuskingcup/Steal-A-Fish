@@ -30,7 +30,7 @@ export interface PondScene {
   /** Show one fish at true scale on the stage (round summary); null returns to the bay. */
   showExhibit(request: RevealRequest | null): void;
   /** Play the big-catch reveal; `onDone` runs when it ends (or is aborted). */
-  playReveal(request: RevealRequest, onDone: () => void): void;
+  playReveal(request: RevealRequest, onDone: () => void, speed?: number): void;
   abortReveal(): void;
   reveal: Reveal;
   /** Who the camera is following, or null for the overview. */
@@ -165,7 +165,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
     focused = next < 0 || next >= ids.length ? null : ids[next]!;
     startFly();
   };
-  const playReveal = (request: RevealRequest, onDone: () => void): void => {
+  const playReveal = (request: RevealRequest, onDone: () => void, speed = 1): void => {
     const before = focused;
     reveal.play(
       request,
@@ -179,6 +179,7 @@ export function createPondScene(canvas: HTMLCanvasElement, host: CrewMember): Po
         startFly();
         onDone();
       },
+      speed,
     );
   };
   const focusOn = (userId: string): void => {

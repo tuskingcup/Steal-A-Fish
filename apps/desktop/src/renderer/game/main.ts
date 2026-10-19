@@ -81,6 +81,7 @@ window.saf.onRound((state) => {
     // Everyone types 1 again each round: clear the dock and the summary.
     crew.reset();
     totals.clear();
+    pendingSummary = null; // started before the last round's reveals finished: skip its summary
     hideSummary();
     pond.focusOverview();
     push(esc(th.joinHint));
@@ -183,12 +184,15 @@ window.saf.onCatch((e) => {
 // ---------- Big-catch reveal queue ----------
 
 /**
- * Big catches (10,000+ points, or a density mutation) get the full reveal. With a big crowd these
- * can pile up, so at most two wait; the rest fall back to a card. Mythic, the cosmic density
- * scenes and colossal fish jump the queue.
+ * Every big catch (10,000+ points, or a density mutation) gets its full reveal, however many
+ * arrive at once: none is dropped. Mythic, the cosmic density scenes and colossal fish go ahead of
+ * the others (in the order they came); when several are waiting the reveals play faster to catch
+ * up. A round that ends mid-queue shows its summary after the last reveal.
  */
-const revealQueue: CatchEvent[] = [];
-const MAX_REVEALS_WAITING = 2;
+const revealQueue: { e: CatchEvent; urgent: boolean }[] = [];
+let revealing: CatchEvent | null = null;
+/** A summary that arrived while reveals were still playing; shown when they are done. */
+let pendingSummary: RoundSummary | null = null;
 
 function wantsReveal(e: CatchEvent): boolean {
   return isBigCatch(e);
@@ -197,24 +201,29 @@ function wantsReveal(e: CatchEvent): boolean {
 function queueReveal(e: CatchEvent): boolean {
   if (summary) return false;
   const urgent = e.fish.rarity === "mythic" || isDense(e.fish.mutations) || e.fish.sizeClass === "colossal";
-  if (revealQueue.length >= MAX_REVEALS_WAITING && !urgent) return false;
-  if (urgent) revealQueue.unshift(e);
-  else revealQueue.push(e);
-  if (revealQueue.length > MAX_REVEALS_WAITING) revealQueue.pop();
-  if (!pond.reveal.active()) playNextReveal();
+  // Urgent ones go after the urgent ones already waiting, ahead of the rest.
+  const at = urgent ? revealQueue.findIndex((q) => !q.urgent) : -1;
+  if (at >= 0) revealQueue.splice(at, 0, { e, urgent });
+  else revealQueue.push({ e, urgent });
+  if (!revealing) playNextReveal();
   return true;
 }
 
-let revealing: CatchEvent | null = null;
-
 function playNextReveal(): void {
-  const e = revealQueue.shift();
-  revealing = e ?? null;
-  if (!e) {
+  const next = revealQueue.shift();
+  revealing = next?.e ?? null;
+  if (!next) {
     revealEl.className = "";
+    if (pendingSummary) {
+      const s = pendingSummary;
+      pendingSummary = null;
+      showSummary(s);
+    }
     return;
   }
-  pond.playReveal({ userId: e.userId, fish: e.fish }, playNextReveal);
+  // 1× with nothing waiting, up to 1.8× with four or more in line.
+  const speed = 1 + Math.min(revealQueue.length, 4) * 0.2;
+  pond.playReveal({ userId: next.e.userId, fish: next.e.fish }, playNextReveal, speed);
 }
 
 let lastStage: string | null = null;
@@ -321,18 +330,25 @@ const MANUAL_HOLD_MS = 15000;
 const FIRST_HOLD_MS = 10000;
 
 window.saf.onSummary((s) => {
+  // Let the big catches still in line play first; the summary follows the last one.
+  if (revealing || revealQueue.length > 0) {
+    pendingSummary = s;
+    return;
+  }
+  showSummary(s);
+});
+
+function showSummary(s: RoundSummary): void {
   summary = s;
   playerIdx = 0;
   fishIdx = 0;
   shownFish = "";
   holdUntil = Date.now() + FIRST_HOLD_MS; // let the winner's best fish sink in first
   cardQueue.length = 0;
-  revealQueue.length = 0;
-  pond.abortReveal();
   document.body.classList.add("in-summary");
   summaryEl.classList.add("show");
   renderSummary();
-});
+}
 
 function hideSummary(): void {
   if (summary) pond.showExhibit(null);

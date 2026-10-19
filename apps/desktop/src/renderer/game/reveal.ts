@@ -52,7 +52,8 @@ export interface Reveal {
   active(): boolean;
   /** True while the stage drives the camera (reveal on stage, or an exhibit). */
   ownsCamera(): boolean;
-  play(request: RevealRequest, hookOn: (userId: string) => void, onDone: () => void): void;
+  /** `speed` > 1 plays the timeline faster (to catch up when big catches pile up). */
+  play(request: RevealRequest, hookOn: (userId: string) => void, onDone: () => void, speed?: number): void;
   /** Show one fish at true scale for the round summary (stays until replaced or null). */
   exhibit(request: RevealRequest | null): void;
   exhibiting(): boolean;
@@ -279,6 +280,7 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
   let playing = false;
   let exhibitOn = false;
   let t = 0;
+  let speed = 1;
   let clock = 0;
   let request: RevealRequest | null = null;
   let done: (() => void) | null = null;
@@ -502,11 +504,16 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
       : t < DOLLY_END ? "stage"
       : "info",
 
-    play(req, hookOn, onDone) {
-      if (exhibitOn) return; // the summary has the stage
+    play(req, hookOn, onDone, rate = 1) {
+      if (exhibitOn) {
+        // The summary has the stage: skip, but never leave the caller's queue waiting.
+        setTimeout(onDone, 0);
+        return;
+      }
       if (playing) finish();
       playing = true;
       t = 0;
+      speed = rate;
       splashed = false;
       request = req;
       done = onDone;
@@ -557,7 +564,7 @@ export function createReveal(scene: Scene, camera: ArcRotateCamera): Reveal {
         return;
       }
       if (!playing || !request) return;
-      t += dt;
+      t += dt * speed;
       if (t >= FLASH_AT && !onStage) {
         enterStage();
         buildDisplay(request, true);
