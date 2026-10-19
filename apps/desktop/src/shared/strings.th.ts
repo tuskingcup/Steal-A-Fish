@@ -219,6 +219,7 @@ export const speciesTh: Record<string, string> = {
   orca: "วาฬเพชฌฆาต",
   whale: "วาฬสีน้ำเงิน",
   nessie: "เนสซี",
+  gyarados: "เกียราดอส",
   megalodon: "เมกาโลดอน",
   bloop: "บลูป",
   elGranMaja: "เอล กราน มาฮา",

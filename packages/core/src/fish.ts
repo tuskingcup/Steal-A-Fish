@@ -55,6 +55,7 @@ export const SPECIES: readonly Species[] = [
   { id: "mekongGiantCatfish", rarity: "legendary", baseLog10: Math.log10(250), price: 3_000 },
   { id: "orca", rarity: "legendary", baseLog10: Math.log10(5_000), price: 4_500 },
   { id: "whale", rarity: "legendary", baseLog10: Math.log10(120_000), price: 6_000, weight: 0.7 },
+  { id: "gyarados", rarity: "legendary", baseLog10: Math.log10(235), price: 5_500, weight: 0.8 },
   { id: "nessie", rarity: "legendary", baseLog10: Math.log10(2_000), price: 5_000, weight: 0.8 },
   { id: "nagaFish", rarity: "mythic", baseLog10: Math.log10(5_000), price: 25_000 },
   { id: "megalodon", rarity: "mythic", baseLog10: Math.log10(50_000), price: 30_000 },

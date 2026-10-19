@@ -14,7 +14,8 @@ import { finMesh, hexRgb, mix, paintFaces, sideFin, smooth, tailTris, type Rgb }
  * megalodon (open jaws full of teeth), orca and blue whale (horizontal flukes), the Bloop (a pale
  * deep-sea giant whose head is one enormous gaping mouth lined with teeth), El Gran Maja (a dark-blue whale-shaped titan with a huge black mouth, jagged teeth and
  * a row of glowing cyan eyes), Nessie (a cheerful orange plesiosaur), Godzilla (an upright kaiju with glowing back plates) and the Sea
- * Eater (a worm-like body that is all mouth, rings of needle teeth, on four long spindly legs).
+ * Eater (a worm-like body that is all mouth, rings of needle teeth, on four long spindly legs) and
+ * Gyarados (a blue sea serpent in an S-curve, cream belly plates, roaring head with a navy crest).
  *
  * Like the fish, models face +x, are about 1 unit long and centred on the origin. Static parts
  * merge into one vertex-coloured mesh; tails, jaws and legs are moving parts on pivots; glowing
@@ -610,6 +611,117 @@ function nessie(scene: Scene): CreatureTemplate {
   return { body: merge("nessie", parts), moving };
 }
 
+// ---------- Gyarados ----------
+
+function gyarados(scene: Scene): CreatureTemplate {
+  const blue = hexRgb("#2E93DC");
+  const deep = hexRgb("#2373BE");
+  const cream = hexRgb("#FFF2BE");
+  const creamEdge = hexRgb("#E8CF86");
+  const white = "#F1F6FA";
+  const parts: Mesh[] = [];
+  // A long serpent body in an S: down from the raised head, along the bottom, coiling up to the tail.
+  const spine = curve(
+    [new Vector3(0.31, 0.25, 0), new Vector3(0.27, 0.12, 0.01), new Vector3(0.23, -0.02, 0.02), new Vector3(0.12, -0.16, 0.03), new Vector3(-0.08, -0.2, 0.0), new Vector3(-0.26, -0.1, -0.03), new Vector3(-0.35, 0.06, -0.02), new Vector3(-0.36, 0.2, 0)],
+    8,
+  );
+  const n = spine.length - 1;
+  const radius = (i: number) => 0.082 - (0.082 - 0.026) * Math.pow(i / n, 1.2);
+  // Per spine point: its tangent, its left (local +y: the belly side, on the front of the S and
+  // under the coil) and the arc length so far, for painting the belly plates.
+  const tan = spine.map((_, i) => spine[Math.min(n, i + 1)]!.subtract(spine[Math.max(0, i - 1)]!).normalize());
+  const arc: number[] = [0];
+  for (let i = 1; i <= n; i++) arc.push(arc[i - 1]! + Vector3.Distance(spine[i - 1]!, spine[i]!));
+  const plate = (arc[n]! / n) * 3; // three rings of the tube per belly plate
+  const paint = (x: number, y: number, z: number): Rgb => {
+    const p = new Vector3(x, y, z);
+    let best = 0;
+    for (let i = 1; i <= n; i++) if (Vector3.DistanceSquared(p, spine[i]!) < Vector3.DistanceSquared(p, spine[best]!)) best = i;
+    const d = tan[best]!;
+    const off = p.subtract(spine[best]!);
+    const u = (off.x * -d.y + off.y * d.x) / radius(best);
+    if (u > -0.05) {
+      const along = (arc[best]! + Vector3.Dot(off, d)) / plate;
+      return along - Math.floor(along) < 0.3 ? creamEdge : cream;
+    }
+    return u < -0.6 ? deep : blue;
+  };
+  const body = CreateTube("gyaradosBody", { path: spine, radiusFunction: (i) => radius(i), tessellation: 14, cap: Mesh.CAP_ALL }, scene);
+  body.convertToFlatShadedMesh();
+  paintFaces(body, paint);
+  parts.push(body);
+  // Small white spines along the back.
+  for (let i = 4; i < n - 6; i += 6) {
+    const d = tan[i]!;
+    const back = new Vector3(d.y, -d.x, 0);
+    const c = spine[i]!;
+    const r = radius(i);
+    const at = (k: number, t: number): [number, number] => [c.x + back.x * k + d.x * t, c.y + back.y * k + d.y * t];
+    parts.push(flatFin(scene, [[at(r * 0.6, 0.03), at(r * 0.6, -0.03), at(r + 0.055, -0.05)]], white, { z: c.z }));
+  }
+  // The head, raised and roaring: skull, an upturned snout, and a gaping red mouth.
+  const H = new Vector3(0.32, 0.26, 0);
+  parts.push(ell(scene, [0.1, 0.075, 0.07], H, blue, { rot: new Vector3(0, 0, 0.25) }));
+  parts.push(ell(scene, [0.085, 0.04, 0.055], H.add(new Vector3(0.08, 0.035, 0)), blue, { rot: new Vector3(0, 0, 0.4) }));
+  parts.push(ell(scene, [0.065, 0.04, 0.046], H.add(new Vector3(0.07, -0.015, 0)), "#7A1C2A", { rot: new Vector3(0, 0, 0.1) }));
+  parts.push(ell(scene, [0.045, 0.014, 0.03], H.add(new Vector3(0.08, -0.04, 0)), "#E98A9C", { rot: new Vector3(0, 0, -0.2) }));
+  const glow: Mesh[] = [];
+  for (const side of [-1, 1]) {
+    // Fangs hanging from the snout.
+    parts.push(cone(scene, H.add(new Vector3(0.13, 0.03, side * 0.03)), H.add(new Vector3(0.135, -0.01, side * 0.03)), 0.008, "#FFFFFF", 4));
+    // Angry red eyes under a heavy brow.
+    glow.push(ell(scene, [0.016, 0.012, 0.008], H.add(new Vector3(0.035, 0.035, side * 0.064)), "#FF2E45", { seg: 8 }));
+    parts.push(ell(scene, [0.035, 0.012, 0.02], H.add(new Vector3(0.035, 0.055, side * 0.058)), deep, { rot: new Vector3(0, 0, -0.35) }));
+    // White fins flaring out behind the cheeks (tilted so their outer face looks up at the sky).
+    const cheek: [number, number][][] = [
+      [[0.02, 0.02], [-0.13, 0.1], [-0.12, 0.05]],
+      [[0.02, 0.02], [-0.12, 0.05], [-0.16, 0.01]],
+      [[0.02, 0.0], [-0.16, 0.01], [-0.13, -0.04]],
+      [[0.02, 0.0], [-0.13, -0.04], [-0.14, -0.08]],
+      [[0.02, -0.01], [-0.14, -0.08], [-0.05, -0.05]],
+    ];
+    parts.push(flatFin(scene, cheek, white, { rot: new Vector3(-side * 0.6, 0, 0.1), at: H.add(new Vector3(-0.03, 0.0, side * 0.06)) }));
+    // Long whiskers curling out from the upper lip.
+    const whisker = curve([H.add(new Vector3(0.11, 0.015, side * 0.045)), H.add(new Vector3(0.16, -0.01, side * 0.12)), H.add(new Vector3(0.12, -0.09, side * 0.18)), H.add(new Vector3(0.04, -0.08, side * 0.17))], 5);
+    parts.push(tube(scene, whisker, 0.007, 0.003, "#3D9FDB", 5));
+  }
+  // The tall navy crest: a big swept blade with a smaller one behind it.
+  const blade = (h: number): [number, number][][] => [
+    [[-0.03, 0], [0.03, 0], [-0.04, h]],
+    [[0.03, 0], [-0.04, h], [0.0, h * 0.55]],
+  ];
+  parts.push(flatFin(scene, blade(0.17), "#1E3E78", { rot: new Vector3(0, 0, 0.35), at: H.add(new Vector3(0.0, 0.06, 0)) }));
+  parts.push(flatFin(scene, blade(0.1), "#1E3E78", { rot: new Vector3(0, 0, 0.9), at: H.add(new Vector3(-0.05, 0.04, 0)) }));
+  // The lower jaw hangs open and works slowly.
+  const jawPivot = H.add(new Vector3(0.0, -0.03, 0));
+  const jaw = merge("gyaradosJaw", [
+    ell(scene, [0.08, 0.028, 0.055], new Vector3(0.07, -0.022, 0), (_x, y) => (y < -0.035 ? cream : blue), { rot: new Vector3(0, 0, -0.4) }),
+    cone(scene, new Vector3(0.11, -0.035, 0.025), new Vector3(0.112, -0.012, 0.025), 0.006, "#FFFFFF", 4),
+    cone(scene, new Vector3(0.11, -0.035, -0.025), new Vector3(0.112, -0.012, -0.025), 0.006, "#FFFFFF", 4),
+  ]);
+  // A white three-lobed tail fin at the top of the coil.
+  const tailEnd = spine[n]!;
+  const tailFin = flatFin(
+    scene,
+    [
+      [[-0.025, -0.03], [0.025, -0.03], [0.0, 0.05]],
+      [[-0.025, 0.0], [0.025, 0.0], [0.0, 0.18]],
+      [[-0.02, 0.0], [-0.13, 0.13], [-0.08, 0.02]],
+      [[0.02, 0.0], [0.13, 0.13], [0.08, 0.02]],
+    ],
+    white,
+  );
+  return {
+    body: merge("gyarados", parts),
+    glow: merge("gyaradosEyes", glow),
+    glowColor: "#FF3B4A",
+    moving: [
+      { mesh: hide(jaw), pivot: jawPivot, axis: "z", amp: 0.12, speed: 0.8 },
+      { mesh: hide(tailFin), pivot: tailEnd, axis: "y", amp: 0.45, speed: 2 },
+    ],
+  };
+}
+
 // ---------- Registry ----------
 
 export const CREATURES: Record<string, (scene: Scene) => CreatureTemplate> = {
@@ -622,4 +734,5 @@ export const CREATURES: Record<string, (scene: Scene) => CreatureTemplate> = {
   elGranMaja,
   godzilla,
   seaEater,
+  gyarados,
 };
