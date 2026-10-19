@@ -42,7 +42,6 @@ function renderRoundBar(): void {
     round.phase === "open" ? th.timeLeft(formatClock(left)) : round.phase === "summary" ? th.nextRoundIn(formatClock(left)) : th.phase.idle;
   const low = round.phase === "open" && left < 30_000 ? " low" : "";
   roundbar.innerHTML =
-    `<span class="pill">${esc(th.round(Math.max(round.round, 1)))}</span>` +
     `<span class="pill clock${low}">${esc(clock)}</span>` +
     `<span class="pill">${esc(th.players(round.players))}</span>`;
 }
@@ -58,7 +57,7 @@ window.saf.onRound((state) => {
     totals.clear();
     hideSummary();
     pond.focusOverview();
-    push(`<b>${esc(th.round(state.round))}</b> — ${esc(th.joinHint)}`);
+    push(esc(th.joinHint));
   }
   renderRoundBar();
 });
