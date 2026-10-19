@@ -710,8 +710,11 @@ function gyarados(scene: Scene): CreatureTemplate {
   const snout = H.add(new Vector3(0.1, 0.045, 0));
   parts.push(ell(scene, [0.11, 0.04, 0.066], snout, blue, { seg: 12, rot: new Vector3(0, 0, 0.45) }));
   parts.push(ell(scene, [0.1, 0.013, 0.067], snout.add(new Vector3(0.005, -0.03, 0)), yellow, { rot: new Vector3(0, 0, 0.45) }));
-  parts.push(ell(scene, [0.085, 0.075, 0.046], H.add(new Vector3(0.075, -0.035, 0)), "#E9837F", { rot: new Vector3(0, 0, -0.1) }));
-  parts.push(ell(scene, [0.04, 0.04, 0.035], H.add(new Vector3(0.04, -0.04, 0)), "#9C2F3A"));
+  // Inside the mouth: a pink palate showing within the yellow lip, and a shallow throat at the back
+  // of the gape (flat, facing out of the mouth, so nothing bulges between the jaws).
+  parts.push(ell(scene, [0.085, 0.012, 0.05], snout.add(new Vector3(0.0, -0.036, 0)), "#E9837F", { rot: new Vector3(0, 0, 0.45) }));
+  parts.push(ell(scene, [0.016, 0.07, 0.05], H.add(new Vector3(0.03, -0.04, 0)), "#D9666A", { rot: new Vector3(0, 0, -0.15) }));
+  parts.push(ell(scene, [0.012, 0.035, 0.026], H.add(new Vector3(0.04, -0.045, 0)), "#8E2A36", { rot: new Vector3(0, 0, -0.15) }));
   const glow: Mesh[] = [];
   for (const side of [-1, 1]) {
     const lip = (t: number) => snout.add(new Vector3(-0.08 + t * 0.16, -0.075 + t * 0.075, side * (0.052 - t * 0.012)));
@@ -753,13 +756,24 @@ function gyarados(scene: Scene): CreatureTemplate {
   // The lower jaw hangs wide open and works slowly; a yellow rim and small teeth line it.
   const jawPivot = H.add(new Vector3(0.0, -0.03 * 1.3, 0));
   const jawParts: Mesh[] = [
-    ell(scene, [0.105, 0.03, 0.068], new Vector3(0.08, -0.05, 0), (_x, y) => (y < -0.08 ? cream : blue), { seg: 12, rot: new Vector3(0, 0, -0.7) }),
-    ell(scene, [0.095, 0.012, 0.062], new Vector3(0.08, -0.03, 0), yellow, { rot: new Vector3(0, 0, -0.7) }),
+    // Painted in the jaw's own frame: pink on top (the floor of the mouth), cream underneath.
+    ell(scene, [0.105, 0.03, 0.068], new Vector3(0.08, -0.05, 0), (x, y) => {
+      const up = Math.sin(0.7) * (x - 0.08) + Math.cos(0.7) * (y + 0.05);
+      return up > 0.012 ? hexRgb("#E9837F") : up < -0.014 ? cream : blue;
+    }, { seg: 12, rot: new Vector3(0, 0, -0.7) }),
+    ell(scene, [0.1, 0.008, 0.069], new Vector3(0.08, -0.034, 0), yellow, { rot: new Vector3(0, 0, -0.7) }),
+    // The tongue, lying on the floor of the mouth.
+    ell(scene, [0.05, 0.01, 0.026], new Vector3(0.06, -0.008, 0), "#F2A0A4", { rot: new Vector3(0, 0, -0.7) }),
   ];
   for (const side of [-1, 1]) {
-    for (const t of [0.4, 0.62, 0.84]) {
-      const base = new Vector3(t * 0.13, -0.005 - t * 0.11, side * (0.05 - t * 0.015));
-      jawParts.push(cone(scene, base, base.add(new Vector3(0.008, 0.024, 0)), 0.007, "#FFFFFF", 4));
+    // Small teeth standing on the yellow rim (placed in the jaw's frame, tilted -0.7 about z).
+    const c = Math.cos(-0.7);
+    const sn = Math.sin(-0.7);
+    const onJaw = (lx: number, ly: number, z: number) => new Vector3(0.08 + c * lx - sn * ly, -0.034 + sn * lx + c * ly, z);
+    for (const lx of [0.0, 0.035, 0.07]) {
+      const z = side * 0.062 * Math.sqrt(Math.max(0, 1 - (lx / 0.1) ** 2));
+      const base = onJaw(lx, 0.004, z);
+      jawParts.push(cone(scene, base, base.add(new Vector3(0.006, 0.026, -side * 0.004)), 0.007, "#FFFFFF", 4)); // pointing up into the gape
     }
   }
   // The head is built at a convenient size, then scaled up about H so it is as broad as the neck.
