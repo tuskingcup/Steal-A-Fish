@@ -659,46 +659,72 @@ function gyarados(scene: Scene): CreatureTemplate {
     const at = (k: number, t: number): [number, number] => [c.x + back.x * k + d.x * t, c.y + back.y * k + d.y * t];
     parts.push(flatFin(scene, [[at(r * 0.6, 0.03), at(r * 0.6, -0.03), at(r + 0.055, -0.05)]], white, { z: c.z }));
   }
-  // The head, raised and roaring: skull, an upturned snout, and a gaping red mouth.
-  const H = new Vector3(0.32, 0.26, 0);
-  parts.push(ell(scene, [0.1, 0.075, 0.07], H, blue, { rot: new Vector3(0, 0, 0.25) }));
-  parts.push(ell(scene, [0.085, 0.04, 0.055], H.add(new Vector3(0.08, 0.035, 0)), blue, { rot: new Vector3(0, 0, 0.4) }));
-  parts.push(ell(scene, [0.065, 0.04, 0.046], H.add(new Vector3(0.07, -0.015, 0)), "#7A1C2A", { rot: new Vector3(0, 0, 0.1) }));
-  parts.push(ell(scene, [0.045, 0.014, 0.03], H.add(new Vector3(0.08, -0.04, 0)), "#E98A9C", { rot: new Vector3(0, 0, -0.2) }));
+  // The head, raised and roaring: a big blue skull with an upturned snout, the mouth flung wide
+  // open (red throat, pink tongue, two big fangs), angry red eyes under heavy navy brows, a navy
+  // three-pointed crest, frilly white fins behind the cheeks and long curling whiskers.
+  const H = new Vector3(0.33, 0.29, 0);
+  const navy = "#1D3F7C";
+  parts.push(ell(scene, [0.11, 0.085, 0.085], H, blue, { seg: 14, rot: new Vector3(0, 0, 0.15) }));
+  // The upper jaw: broad, flat, tipped up, with a rounded nose.
+  const snout = H.add(new Vector3(0.1, 0.035, 0));
+  parts.push(ell(scene, [0.095, 0.036, 0.072], snout, blue, { seg: 12, rot: new Vector3(0, 0, 0.42) }));
+  parts.push(ell(scene, [0.03, 0.022, 0.048], snout.add(new Vector3(0.068, 0.03, 0)), blue, { rot: new Vector3(0, 0, 0.42) }));
+  // Upper gum, then the throat and tongue between the jaws.
+  parts.push(ell(scene, [0.085, 0.012, 0.062], snout.add(new Vector3(-0.005, -0.03, 0)), "#C9465A", { rot: new Vector3(0, 0, 0.42) }));
+  parts.push(ell(scene, [0.075, 0.07, 0.06], H.add(new Vector3(0.06, -0.05, 0)), "#6E1424", { rot: new Vector3(0, 0, -0.3) }));
+  parts.push(ell(scene, [0.06, 0.016, 0.035], H.add(new Vector3(0.07, -0.085, 0)), "#F08FA0", { rot: new Vector3(0, 0, -0.6) }));
   const glow: Mesh[] = [];
   for (const side of [-1, 1]) {
-    // Fangs hanging from the snout.
-    parts.push(cone(scene, H.add(new Vector3(0.13, 0.03, side * 0.03)), H.add(new Vector3(0.135, -0.01, side * 0.03)), 0.008, "#FFFFFF", 4));
-    // Angry red eyes under a heavy brow.
-    glow.push(ell(scene, [0.016, 0.012, 0.008], H.add(new Vector3(0.035, 0.035, side * 0.064)), "#FF2E45", { seg: 8 }));
-    parts.push(ell(scene, [0.035, 0.012, 0.02], H.add(new Vector3(0.035, 0.055, side * 0.058)), deep, { rot: new Vector3(0, 0, -0.35) }));
-    // White fins flaring out behind the cheeks (tilted so their outer face looks up at the sky).
-    const cheek: [number, number][][] = [
-      [[0.02, 0.02], [-0.13, 0.1], [-0.12, 0.05]],
-      [[0.02, 0.02], [-0.12, 0.05], [-0.16, 0.01]],
-      [[0.02, 0.0], [-0.16, 0.01], [-0.13, -0.04]],
-      [[0.02, 0.0], [-0.13, -0.04], [-0.14, -0.08]],
-      [[0.02, -0.01], [-0.14, -0.08], [-0.05, -0.05]],
-    ];
-    parts.push(flatFin(scene, cheek, white, { rot: new Vector3(-side * 0.6, 0, 0.1), at: H.add(new Vector3(-0.03, 0.0, side * 0.06)) }));
-    // Long whiskers curling out from the upper lip.
-    const whisker = curve([H.add(new Vector3(0.11, 0.015, side * 0.045)), H.add(new Vector3(0.16, -0.01, side * 0.12)), H.add(new Vector3(0.12, -0.09, side * 0.18)), H.add(new Vector3(0.04, -0.08, side * 0.17))], 5);
-    parts.push(tube(scene, whisker, 0.007, 0.003, "#3D9FDB", 5));
+    // Two big fangs hanging from the front of the upper jaw, smaller teeth behind them.
+    const lip = (t: number) => snout.add(new Vector3(-0.07 + t * 0.15, -0.065 + t * 0.06, side * (0.05 - t * 0.012)));
+    parts.push(cone(scene, lip(0.85), lip(0.85).add(new Vector3(0.008, -0.055, 0)), 0.013, "#FFFFFF", 5));
+    for (const t of [0.35, 0.55]) parts.push(cone(scene, lip(t), lip(t).add(new Vector3(0.004, -0.025, 0)), 0.007, "#FFFFFF", 4));
+    // Angry eyes: red with a dark slit, set high on the skull...
+    const eye = H.add(new Vector3(0.05, 0.045, side * 0.07));
+    parts.push(ell(scene, [0.026, 0.02, 0.012], eye, "#FFF4F0", { rot: new Vector3(side * 0.5, 0, -0.35) }));
+    glow.push(ell(scene, [0.016, 0.014, 0.008], eye.add(new Vector3(0.006, 0, side * 0.006)), "#FF2E45", { seg: 8, rot: new Vector3(side * 0.5, 0, 0) }));
+    parts.push(ell(scene, [0.004, 0.011, 0.004], eye.add(new Vector3(0.008, 0, side * 0.013)), "#1A0508", { seg: 6 }));
+    // ...under a thick navy brow slanting down toward the snout.
+    parts.push(ell(scene, [0.05, 0.013, 0.016], eye.add(new Vector3(0.0, 0.024, -side * 0.006)), navy, { rot: new Vector3(side * 0.45, 0, -0.55) }));
+    // Frilly white fins flaring out behind the cheeks (tilted so their outer face looks up at the sky).
+    const cheek = ([
+      [[0.03, 0.03], [-0.14, 0.13], [-0.13, 0.06]],
+      [[0.03, 0.02], [-0.13, 0.06], [-0.19, 0.03]],
+      [[0.03, 0.0], [-0.19, 0.03], [-0.15, -0.03]],
+      [[0.03, 0.0], [-0.15, -0.03], [-0.17, -0.09]],
+      [[0.03, -0.01], [-0.17, -0.09], [-0.06, -0.06]],
+    ] as [number, number][][]).map((tri) => tri.map(([x, y]): [number, number] => [x * 0.75, y * 0.75]));
+    parts.push(flatFin(scene, cheek, white, { rot: new Vector3(-side * 0.6, 0, 0.15), at: H.add(new Vector3(-0.05, -0.01, side * 0.07)) }));
+    // Long thin whiskers from the corners of the upper jaw, curling down and back.
+    const whisker = curve([snout.add(new Vector3(-0.02, -0.03, side * 0.06)), snout.add(new Vector3(0.03, -0.06, side * 0.14)), snout.add(new Vector3(-0.02, -0.16, side * 0.2)), snout.add(new Vector3(-0.1, -0.17, side * 0.19)), snout.add(new Vector3(-0.12, -0.12, side * 0.17))], 5);
+    parts.push(tube(scene, whisker, 0.0065, 0.0025, "#3D9FDB", 5));
   }
-  // The tall navy crest: a big swept blade with a smaller one behind it.
-  const blade = (h: number): [number, number][][] => [
-    [[-0.03, 0], [0.03, 0], [-0.04, h]],
-    [[0.03, 0], [-0.04, h], [0.0, h * 0.55]],
-  ];
-  parts.push(flatFin(scene, blade(0.17), "#1E3E78", { rot: new Vector3(0, 0, 0.35), at: H.add(new Vector3(0.0, 0.06, 0)) }));
-  parts.push(flatFin(scene, blade(0.1), "#1E3E78", { rot: new Vector3(0, 0, 0.9), at: H.add(new Vector3(-0.05, 0.04, 0)) }));
-  // The lower jaw hangs open and works slowly.
+  // The navy crest: a tall swept-back centre point and a point leaning out over each side, solid
+  // (not a sheet) so it stays lit from any angle.
+  const point = (h: number, w: number, t: number, at: Vector3, rot: Vector3) =>
+    ell(scene, [w, h / 2, t], at, navy, {
+      rot,
+      deform: (p) => {
+        const k = Math.pow(Math.max(0, 1 - (p.y + h / 2) / h), 0.75);
+        p.x *= k;
+        p.z *= k;
+        p.y += h / 2;
+      },
+    });
+  const crown = H.add(new Vector3(-0.01, 0.07, 0));
+  parts.push(point(0.22, 0.05, 0.016, crown, new Vector3(0, 0, 0.45)));
+  for (const side of [-1, 1]) parts.push(point(0.14, 0.04, 0.014, crown.add(new Vector3(0.01, -0.01, side * 0.03)), new Vector3(side * 0.85, 0, 0.3)));
+  // The lower jaw hangs wide open and works slowly; teeth line its rim.
   const jawPivot = H.add(new Vector3(0.0, -0.03, 0));
-  const jaw = merge("gyaradosJaw", [
-    ell(scene, [0.08, 0.028, 0.055], new Vector3(0.07, -0.022, 0), (_x, y) => (y < -0.035 ? cream : blue), { rot: new Vector3(0, 0, -0.4) }),
-    cone(scene, new Vector3(0.11, -0.035, 0.025), new Vector3(0.112, -0.012, 0.025), 0.006, "#FFFFFF", 4),
-    cone(scene, new Vector3(0.11, -0.035, -0.025), new Vector3(0.112, -0.012, -0.025), 0.006, "#FFFFFF", 4),
-  ]);
+  const jawParts: Mesh[] = [ell(scene, [0.1, 0.03, 0.07], new Vector3(0.075, -0.05, 0), (_x, y) => (y < -0.075 ? cream : blue), { seg: 12, rot: new Vector3(0, 0, -0.75) })];
+  jawParts.push(ell(scene, [0.085, 0.01, 0.055], new Vector3(0.075, -0.027, 0), "#C9465A", { rot: new Vector3(0, 0, -0.75) }));
+  for (const side of [-1, 1]) {
+    for (const t of [0.4, 0.62, 0.84]) {
+      const base = new Vector3(0.0 + t * 0.13, -0.005 - t * 0.12, side * (0.05 - t * 0.015));
+      jawParts.push(cone(scene, base, base.add(new Vector3(0.008, 0.026, 0)), 0.007, "#FFFFFF", 4));
+    }
+  }
+  const jaw = merge("gyaradosJaw", jawParts);
   // A white three-lobed tail fin at the top of the coil.
   const tailEnd = spine[n]!;
   const tailFin = flatFin(
@@ -716,7 +742,7 @@ function gyarados(scene: Scene): CreatureTemplate {
     glow: merge("gyaradosEyes", glow),
     glowColor: "#FF3B4A",
     moving: [
-      { mesh: hide(jaw), pivot: jawPivot, axis: "z", amp: 0.12, speed: 0.8 },
+      { mesh: hide(jaw), pivot: jawPivot, axis: "z", amp: 0.1, speed: 0.8 },
       { mesh: hide(tailFin), pivot: tailEnd, axis: "y", amp: 0.45, speed: 2 },
     ],
   };
